@@ -8,7 +8,7 @@ from io import BytesIO
 from datetime import datetime, timedelta
 import base64
 
-st.set_page_config(page_title="yFinance Veri İndirici", layout="centered")
+st.set_page_config(page_title="yfinance veri indirici", layout="centered")
 
 st.markdown("""
 <style>
