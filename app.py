@@ -111,8 +111,7 @@ if symbol:
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
 
-        # Görseli göster
-        st.pyplot(fig)
+
 
         # Görseli kopyalanabilir hale getir (PNG olarak base64)
         buf = BytesIO()
