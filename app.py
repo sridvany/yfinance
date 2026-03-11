@@ -18,7 +18,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 yFinance Veri İndirici")
+st.title("📊 yfinance veri indirici")
 
 # --- 1. Sembol Girişi ---
 symbol = st.text_input("Sembol", placeholder="Örn: THYAO.IS, AAPL, BTC-USD")
