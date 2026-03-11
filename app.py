@@ -69,12 +69,14 @@ if symbol:
         st.warning("Seçilen tarih aralığında veri yok.")
         st.stop()
 
-    # --- 3. Boş/0 değer sayısı ---
-    zero_or_null = int(((df.isnull().any(axis=1)) | (df == 0).any(axis=1)).sum())
+    # --- 3. Boş/0 değer sayısı (sadece OHLCV) ---
+    check_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+    zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
+
     st.markdown(f"""
     <div class="info-box">
         <b>Seçilen aralıktaki veri günü:</b> {len(df):,}<br>
-        <b>Boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}
+        <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}
     </div>
     """, unsafe_allow_html=True)
 
