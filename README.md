@@ -1,2 +1,2 @@
 # yfinance
-Data downloading...
+Data downloader
