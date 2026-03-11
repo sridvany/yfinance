@@ -19,6 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indirici")
+st.caption("Varlık sembolünü bilmiyorsanız Gemini'ye 'yfinance ...... tickerı nedir' yazın.")
 
 # --- 1. Sembol Girişi ---
 symbol = st.text_input("Sembol", placeholder="Örn: THYAO.IS, AAPL, BTC-USD")
