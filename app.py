@@ -70,11 +70,11 @@ if symbol:
         st.stop()
 
     # --- 3. Boş/0 değer sayısı ---
-    zero_or_null = int((df.isnull().sum().sum()) + (df == 0).sum().sum())
+    zero_or_null = int(((df.isnull().any(axis=1)) | (df == 0).any(axis=1)).sum())
     st.markdown(f"""
     <div class="info-box">
         <b>Seçilen aralıktaki veri günü:</b> {len(df):,}<br>
-        <b>Boş veya 0 değer taşıyan hücre sayısı:</b> {zero_or_null:,}
+        <b>Boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}
     </div>
     """, unsafe_allow_html=True)
 
