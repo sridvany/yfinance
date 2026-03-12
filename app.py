@@ -542,3 +542,148 @@ if symbol:
 | Volatilite | ATR, BBW | Log → yetmezse Log+Fark |
 | Osilatörler | RSI, MACD, MACD_Signal, MACD_Hist | Birinci Fark |
             """)
+
+        # ============================================================
+        # VIF ANALİZİ
+        # ============================================================
+
+        st.divider()
+        st.subheader("📐 VIF Analizi (Çoklu Doğrusallık)")
+        st.caption(
+            "Ham seriler ve dönüştürülmüş seriler için ayrı ayrı VIF hesaplanır. "
+            "Yüksek VIF değerleri değişkenler arasındaki çoklu doğrusallığa işaret eder."
+        )
+
+        vif_threshold = st.slider(
+            "VIF Eşiği", min_value=2, max_value=20, value=10, step=1,
+            help="Bu eşiğin üzerindeki değişkenler yüksek çoklu doğrusallık içeriyor demektir."
+        )
+
+        run_vif = st.button("VIF Analizini Çalıştır")
+
+        if run_vif:
+            try:
+                from statsmodels.stats.outliers_influence import variance_inflation_factor
+            except ImportError:
+                st.error("statsmodels kütüphanesi gerekli: pip install statsmodels")
+                st.stop()
+
+            def calc_vif(data_df):
+                """
+                NaN içermeyen tam satırlar üzerinde VIF hesaplar.
+                Her değişken için VIF döndürür.
+                """
+                clean = data_df.dropna()
+                if clean.shape[0] < clean.shape[1] + 1:
+                    return None  # yeterli gözlem yok
+                vif_data = []
+                for i in range(clean.shape[1]):
+                    try:
+                        vif_val = variance_inflation_factor(clean.values, i)
+                    except Exception:
+                        vif_val = np.nan
+                    vif_data.append({
+                        "Değişken": clean.columns[i],
+                        "VIF": round(vif_val, 2)
+                    })
+                return pd.DataFrame(vif_data)
+
+            def style_vif(val, threshold):
+                if isinstance(val, float):
+                    if val > threshold:
+                        return "color: red; font-weight: bold"
+                    elif val > threshold / 2:
+                        return "color: orange"
+                return ""
+
+            # ----------------------------------------------------------
+            # Ham Seriler VIF
+            # ----------------------------------------------------------
+            st.markdown("### Ham Seriler")
+
+            ham_cols = [c for c in test_cols if c in df.columns]
+            ham_df = df[ham_cols].copy()
+            vif_ham = calc_vif(ham_df)
+
+            if vif_ham is not None:
+                high_ham = vif_ham[vif_ham["VIF"] > vif_threshold]
+                st.dataframe(
+                    vif_ham.style.applymap(
+                        lambda v: style_vif(v, vif_threshold), subset=["VIF"]
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                if not high_ham.empty:
+                    cols_high = ", ".join(high_ham["Değişken"].tolist())
+                    st.warning(
+                        f"VIF > {vif_threshold}: **{cols_high}** — yüksek çoklu doğrusallık. "
+                        "PCA veya değişken çıkarma düşünülebilir."
+                    )
+                else:
+                    st.success(f"Tüm ham değişkenlerde VIF ≤ {vif_threshold}.")
+            else:
+                st.warning("Ham seriler için yeterli gözlem yok.")
+
+            # ----------------------------------------------------------
+            # Dönüştürülmüş Seriler VIF
+            # ----------------------------------------------------------
+            st.markdown("### Dönüştürülmüş (Durağan) Seriler")
+
+            # Dönüştürülmüş serileri yeniden üret
+            transformed_dict = {}
+            for col in test_cols:
+                series = df[col].dropna()
+                # Durağanlık kararını tekrar belirle (results listesinden al)
+                r = next((x for x in results if x["Değişken"] == col), None)
+                if r is None:
+                    continue
+                if r["Önerilen Dönüşüm"] == "—":
+                    # Ham haliyle durağan → direkt kullan
+                    transformed_dict[col] = series
+                else:
+                    t_series, _ = get_transform(col, series)
+                    transformed_dict[col] = t_series
+
+            # Ortak index için hizala
+            trans_df = pd.DataFrame(transformed_dict)
+            vif_trans = calc_vif(trans_df)
+
+            if vif_trans is not None:
+                high_trans = vif_trans[vif_trans["VIF"] > vif_threshold]
+                st.dataframe(
+                    vif_trans.style.applymap(
+                        lambda v: style_vif(v, vif_threshold), subset=["VIF"]
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                if not high_trans.empty:
+                    cols_high = ", ".join(high_trans["Değişken"].tolist())
+                    st.warning(
+                        f"VIF > {vif_threshold}: **{cols_high}** — dönüşüm sonrası hâlâ yüksek çoklu doğrusallık. "
+                        "Bu değişkenler aynı ekonomik fenomeni ölçüyor olabilir. "
+                        "PCA ile tek bileşene indirgenmesi önerilebilir."
+                    )
+                else:
+                    st.success(f"Dönüştürülmüş serilerde tüm VIF değerleri ≤ {vif_threshold}.")
+            else:
+                st.warning("Dönüştürülmüş seriler için yeterli gözlem yok.")
+
+            with st.expander("📖 VIF Yorumlama Rehberi"):
+                st.markdown(f"""
+**VIF (Variance Inflation Factor) Nedir?**
+Bir değişkenin diğer bağımsız değişkenler tarafından ne ölçüde açıklandığını gösterir.
+
+| VIF Değeri | Yorum |
+|------------|-------|
+| 1 | Çoklu doğrusallık yok |
+| 1 – {vif_threshold//2} | Kabul edilebilir |
+| {vif_threshold//2} – {vif_threshold} | Orta düzey, dikkat |
+| > {vif_threshold} | Yüksek — sorun var |
+
+**Çözüm Seçenekleri:**
+- Birbiriyle yüksek korelasyonlu değişkenlerden birini çıkar
+- PCA ile boyut indirgeme yap (yorumlanabilirlik kaybı göze alınarak)
+- Ridge/Lasso regresyon kullan (ceza terimi çoklu doğrusallığı bastırır)
+                """)
