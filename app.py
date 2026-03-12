@@ -292,6 +292,23 @@ if symbol:
             except Exception:
                 return None
 
+        def run_pp(series):
+            """Phillips-Perron testi"""
+            try:
+                from statsmodels.tsa.stattools import PhillipsPerron
+                clean = series.dropna()
+                if len(clean) < 20:
+                    return None
+                result = PhillipsPerron(clean)
+                return result.pvalue
+            except Exception:
+                try:
+                    clean = series.dropna()
+                    result = adfuller(clean, autolag='AIC', regression='ct')
+                    return result[1]
+                except Exception:
+                    return None
+
         def is_stationary(adf_p, kpss_p):
             """True=durağan, False=değil, None=çelişkili"""
             if adf_p is None or kpss_p is None:
@@ -371,15 +388,31 @@ if symbol:
 
             price_like_flag = col in PRICE_LIKE
             dfgls_note = "—"
+            pp_note = "—"
+            karar_notu = "ADF+KPSS"
             transform_label = "—"
             transform_verdict = "—"
 
-            # Çelişkili → DF-GLS
+            # Adım 1: Çelişkili → DF-GLS
             if stat is None:
                 dfgls_p = dfgls_test(series, price_like=price_like_flag)
                 if dfgls_p is not None:
                     dfgls_note = f"p={dfgls_p:.3f}"
                     stat = dfgls_p < 0.05
+                    karar_notu = "DF-GLS"
+
+            # Adım 2: Hâlâ belirsiz → PP testi
+            if stat is None:
+                pp_p = run_pp(series)
+                if pp_p is not None:
+                    pp_note = f"p={pp_p:.3f}"
+                    stat = pp_p < 0.05
+                    karar_notu = "PP"
+
+            # Adım 3: Hâlâ belirsiz → muhafazakar: durağan değil say
+            if stat is None:
+                stat = False
+                karar_notu = "Muhafazakar (konsensüs yok)"
 
             # Ham seri durağan değilse → dönüşüm uygula
             if stat is False:
@@ -388,38 +421,44 @@ if symbol:
                 t_kpss_p, _ = run_kpss(transformed)
                 t_stat = is_stationary(t_adf_p, t_kpss_p)
 
-                # Çelişkili çıkarsa DF-GLS
+                # Dönüşüm sonrası çelişkili → DF-GLS
                 if t_stat is None:
                     t_dfgls_p = dfgls_test(transformed, price_like=False)
                     if t_dfgls_p is not None:
                         t_stat = t_dfgls_p < 0.05
 
+                # Hâlâ belirsiz → PP
+                if t_stat is None:
+                    t_pp_p = run_pp(transformed)
+                    if t_pp_p is not None:
+                        t_stat = t_pp_p < 0.05
+
+                # Son çare → muhafazakar
+                if t_stat is None:
+                    t_stat = False
+
                 if t_stat is True:
                     transform_verdict = "Durağan ✅"
-                elif t_stat is False:
-                    transform_verdict = "Hâlâ Durağan Değil ⚠️"
                 else:
-                    transform_verdict = "Belirsiz ?"
+                    transform_verdict = "Hâlâ Durağan Değil ⚠️"
 
                 ham_sonuc = "Durağan Değil ❌"
                 ham_color = "red"
-            elif stat is True:
+            else:
                 ham_sonuc = "Durağan ✅"
                 ham_color = "green"
-            else:
-                ham_sonuc = "Belirsiz ?"
-                ham_color = "orange"
 
             results.append({
                 "Değişken": col,
                 "ADF p": f"{adf_p:.3f}" if adf_p is not None else "—",
                 "KPSS p": f"{kpss_p:.3f}" if kpss_p is not None else "—",
-                "DF-GLS": dfgls_note,
+                "DF-GLS p": dfgls_note,
+                "PP p": pp_note,
+                "Karar Dayanağı": karar_notu,
                 "Ham Sonuç": ham_sonuc,
                 "Önerilen Dönüşüm": transform_label,
                 "Dönüşüm Sonrası": transform_verdict,
                 "_color": ham_color,
-                "_needs_transform": stat is False
             })
 
             progress.progress((idx + 1) / len(test_cols), text=f"Test ediliyor: {col}")
@@ -430,24 +469,25 @@ if symbol:
         # Sonuç Tabloları
         # ----------------------------------------------------------
 
-        stationary     = [r for r in results if r["_color"] == "green"]
-        nonstationary  = [r for r in results if r["_color"] == "red"]
-        conflicting    = [r for r in results if r["_color"] == "orange"]
+        stationary    = [r for r in results if r["_color"] == "green"]
+        nonstationary = [r for r in results if r["_color"] == "red"]
 
         def render_ham_table(rows):
             display = pd.DataFrame([{
-                "Değişken":   r["Değişken"],
-                "ADF p":      r["ADF p"],
-                "KPSS p":     r["KPSS p"],
-                "DF-GLS p":   r["DF-GLS"],
-                "Sonuç":      r["Ham Sonuç"],
+                "Değişken":        r["Değişken"],
+                "ADF p":           r["ADF p"],
+                "KPSS p":          r["KPSS p"],
+                "DF-GLS p":        r["DF-GLS p"],
+                "PP p":            r["PP p"],
+                "Karar Dayanağı":  r["Karar Dayanağı"],
+                "Sonuç":           r["Ham Sonuç"],
             } for r in rows])
             st.dataframe(display, use_container_width=True, hide_index=True)
 
         def render_transform_table(rows):
             display = pd.DataFrame([{
                 "Değişken":          r["Değişken"],
-                "Ham Sonuç":         r["Ham Sonuç"],
+                "Karar Dayanağı":    r["Karar Dayanağı"],
                 "Önerilen Dönüşüm":  r["Önerilen Dönüşüm"],
                 "Dönüşüm Sonrası":   r["Dönüşüm Sonrası"],
             } for r in rows])
@@ -460,7 +500,6 @@ if symbol:
         if nonstationary:
             st.markdown("### ❌ Durağan Değil → Dönüşüm Uygulandı")
             render_transform_table(nonstationary)
-            # Hâlâ durağan olmayan varsa uyar
             still_bad = [r for r in nonstationary if "Hâlâ" in r["Dönüşüm Sonrası"]]
             if still_bad:
                 cols_bad = ", ".join(r["Değişken"] for r in still_bad)
@@ -469,35 +508,31 @@ if symbol:
                     "Yapısal kırılma testi (Lee-Strazicich) veya ikinci fark önerilebilir."
                 )
 
-        if conflicting:
-            st.markdown("### ⚠️ Çelişkili (DF-GLS ile karar verildi)")
-            render_ham_table(conflicting)
-
-        # ----------------------------------------------------------
-        # Özet
-        # ----------------------------------------------------------
         st.markdown("---")
-        total     = len(results)
-        n_stat    = len(stationary)
-        n_nonstat = len(nonstationary)
-        n_conf    = len(conflicting)
-        n_fixed   = sum(1 for r in nonstationary if r["Dönüşüm Sonrası"] == "Durağan ✅")
+        total   = len(results)
+        n_stat  = len(stationary)
+        n_non   = len(nonstationary)
+        n_fixed = sum(1 for r in nonstationary if r["Dönüşüm Sonrası"] == "Durağan ✅")
+        n_cons  = sum(1 for r in results if r["Karar Dayanağı"] == "Muhafazakar (konsensüs yok)")
 
         st.markdown(f"""
         <div class="info-box">
             <b>Özet:</b> {total} değişken test edildi.<br>
             ✅ Ham durağan: <b>{n_stat}</b> &nbsp;|&nbsp;
-            ❌ Durağan değil: <b>{n_nonstat}</b>
-            (dönüşümle düzeltilen: <b>{n_fixed}</b>) &nbsp;|&nbsp;
-            ⚠️ Çelişkili: <b>{n_conf}</b>
+            ❌ Durağan değil: <b>{n_non}</b>
+            (dönüşümle düzeltilen: <b>{n_fixed}</b>)<br>
+            ⚠️ Muhafazakar kararla işlenen: <b>{n_cons}</b>
+            {"— tüm testler çelişti, sahte regresyon riskine karşı dönüşüm uygulandı." if n_cons > 0 else ""}
         </div>
         """, unsafe_allow_html=True)
 
-        with st.expander("📖 Test Metodolojisi & Dönüşüm Kuralları"):
+        with st.expander("📖 Test Metodolojisi & Karar Hiyerarşisi"):
             st.markdown("""
-**ADF:** H₀ = birim kök var → p < 0.05 → durağan
-**KPSS:** H₀ = durağan → p < 0.05 → durağan değil
-**DF-GLS:** ADF/KPSS çelişirse devreye girer; fiyat serilerinde trend+sabit, osilatörlerde sabit parametresiyle çalışır.
+**Test Hiyerarşisi (her değişken için sırayla uygulanır):**
+1. **ADF + KPSS** → ikisi aynı yönde → karar verilir
+2. **DF-GLS** → ADF/KPSS çelişirse devreye girer
+3. **PP (Phillips-Perron)** → DF-GLS sonrası hâlâ belirsizse uygulanır
+4. **Muhafazakar yaklaşım** → üç test de konsensüs sağlayamazsa "durağan değil" kabul edilir
 
 **Dönüşüm Kuralları:**
 | Grup | Değişkenler | Uygulanan Dönüşüm |
