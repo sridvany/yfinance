@@ -298,7 +298,7 @@ if symbol:
 
         return stat, adf_p, kpss_p, dfgls_note, pp_note, karar
 
-    test_cols = [c for c in df.columns if c in ALL_TEST]
+    test_cols = [c for c in df.columns if c in ALL_TEST and c in selected_cols]
 
     # ============================================================
     # DURAĞANLIK ANALİZİ
