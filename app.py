@@ -131,7 +131,7 @@ if symbol:
     df["EMA_50"] = calc_ema(close, 50)
     df["EMA_200"] = calc_ema(close, 200)
     df["RSI"] = calc_rsi(close)
-    
+    df["MACD"] = calc_macd(close)[0]
     df["ATR"] = calc_atr(high, low, close)
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
