@@ -428,20 +428,7 @@ if symbol:
                 if val > vif_threshold / 2:     return "color: orange"
                 return ""
 
-            # Ham seriler
-            st.markdown("### Ham Seriler")
-            vif_ham = calc_vif(df[[c for c in test_cols if c in df.columns]].copy())
-            if vif_ham is not None:
-                high = vif_ham[vif_ham["VIF"] > vif_threshold]
-                st.dataframe(vif_ham.style.applymap(style_vif, subset=["VIF"]),
-                             use_container_width=True, hide_index=True)
-                if not high.empty:
-                    st.warning(f"VIF > {vif_threshold}: **{', '.join(high['Değişken'].tolist())}** "
-                               "— yüksek çoklu doğrusallık.")
-                else:
-                    st.success(f"Tüm ham değişkenlerde VIF ≤ {vif_threshold}.")
-            else:
-                st.warning("Yeterli gözlem yok.")
+            
 
             # Dönüştürülmüş seriler
             st.markdown("### Dönüştürülmüş (Durağan) Seriler")
