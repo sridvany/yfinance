@@ -233,198 +233,277 @@ if symbol:
 
     st.divider()
     st.subheader("🔬 Durağanlık Analizi")
-    st.caption("Her değişken için ADF ve KPSS testleri uygulanır. Çelişkili sonuçlarda DF-GLS ile karar verilir.")
+    st.caption(
+        "Her değişken için ADF ve KPSS testleri uygulanır. "
+        "Çelişkili sonuçlarda DF-GLS ile karar verilir. "
+        "Durağan olmayan seriler için otomatik dönüşüm uygulanır ve sonuç doğrulanır."
+    )
 
     run_tests = st.button("Durağanlık Testlerini Çalıştır")
 
     if run_tests:
         try:
             from statsmodels.tsa.stattools import adfuller, kpss
-            from statsmodels.tsa.stattools import adfuller
         except ImportError:
             st.error("statsmodels kütüphanesi gerekli: pip install statsmodels")
             st.stop()
 
-        # DF-GLS için arch veya statsmodels
-        def dfgls_test(series, trend='c'):
-            """DF-GLS testi - statsmodels DFGLS kullan, yoksa ADF ile proxy"""
-            try:
-                from statsmodels.tsa.stattools import adfuller
-                # Basit proxy: detrended seriye ADF
-                from statsmodels.regression.linear_model import OLS
-                from statsmodels.tools import add_constant
-                import numpy as np
-                t = np.arange(len(series))
-                if trend == 'ct':
-                    X = add_constant(np.column_stack([t]))
-                else:
-                    X = add_constant(np.ones(len(series)))
-                resid = series.values - OLS(series.values, X).fit().fittedvalues
-                result = adfuller(resid, autolag='AIC', regression='n')
-                return result[1]  # p-value
-            except Exception:
-                return None
+        import warnings
+
+        # ----------------------------------------------------------
+        # Yardımcı Test Fonksiyonları
+        # ----------------------------------------------------------
 
         def run_adf(series):
-            """ADF testi, None dönerse hata var"""
             try:
                 clean = series.dropna()
                 if len(clean) < 20:
                     return None, None
                 result = adfuller(clean, autolag='AIC')
-                return result[1], result[0]  # p-value, stat
+                return result[1], result[0]
             except Exception:
                 return None, None
 
         def run_kpss(series):
-            """KPSS testi"""
             try:
                 clean = series.dropna()
                 if len(clean) < 20:
                     return None, None
-                import warnings
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     result = kpss(clean, regression='c', nlags='auto')
-                return result[1], result[0]  # p-value, stat
+                return result[1], result[0]
             except Exception:
                 return None, None
 
-        def interpret(adf_p, kpss_p):
-            """
-            ADF H0: birim kök var → p<0.05 → durağan
-            KPSS H0: durağan     → p<0.05 → durağan değil
-            """
+        def dfgls_test(series, price_like=False):
+            """GLS-detrended seriye ADF uygular (DF-GLS proxy)"""
+            try:
+                from statsmodels.regression.linear_model import OLS
+                from statsmodels.tools import add_constant
+                t = np.arange(len(series))
+                if price_like:
+                    X = add_constant(np.column_stack([t]))
+                else:
+                    X = add_constant(np.ones(len(series)))
+                resid = series.values - OLS(series.values, X).fit().fittedvalues
+                result = adfuller(resid, autolag='AIC', regression='n')
+                return result[1]
+            except Exception:
+                return None
+
+        def is_stationary(adf_p, kpss_p):
+            """True=durağan, False=değil, None=çelişkili"""
             if adf_p is None or kpss_p is None:
-                return "Yetersiz veri", "gray", None
+                return None
+            adf_ok = adf_p < 0.05
+            kpss_ok = kpss_p >= 0.05
+            if adf_ok and kpss_ok:
+                return True
+            if not adf_ok and not kpss_ok:
+                return False
+            return None  # çelişkili
 
-            adf_stationary = adf_p < 0.05
-            kpss_stationary = kpss_p >= 0.05
+        # ----------------------------------------------------------
+        # Dönüşüm Kuralları (değişken tipine göre)
+        # ----------------------------------------------------------
 
-            if adf_stationary and kpss_stationary:
-                return "Durağan ✅", "green", None
-            elif not adf_stationary and not kpss_stationary:
-                return "Durağan Değil ❌", "red", None
+        # Grup tanımları
+        PRICE_LIKE   = {"Open", "High", "Low", "Close",
+                        "EMA_20", "EMA_50", "EMA_200",
+                        "BB_Upper", "BB_Lower", "Supertrend"}
+        VOLUME_LIKE  = {"Volume"}
+        VOL_MEASURE  = {"ATR", "BBW"}          # volatilite ölçüleri
+        OSCILLATORS  = {"RSI", "MACD", "MACD_Signal", "MACD_Hist"}
+
+        def get_transform(col, series):
+            """
+            Durağan olmayan seri için dönüşüm uygular.
+            (col_name, transformed_series, transform_label) döndürür.
+            """
+            if col in PRICE_LIKE:
+                # log return
+                log_s = np.log(series.replace(0, np.nan))
+                transformed = log_s.diff().dropna()
+                label = "Log Return [ln(Pt/Pt-1)]"
+            elif col in VOLUME_LIKE:
+                # log fark
+                log_s = np.log(series.replace(0, np.nan))
+                transformed = log_s.diff().dropna()
+                label = "Log Fark"
+            elif col in VOL_MEASURE:
+                # önce log; hâlâ birim kök varsa fark al
+                log_s = np.log(series.replace(0, np.nan)).dropna()
+                adf_p2, _ = run_adf(log_s)
+                kpss_p2, _ = run_kpss(log_s)
+                if is_stationary(adf_p2, kpss_p2):
+                    transformed = log_s
+                    label = "Log Dönüşümü"
+                else:
+                    transformed = log_s.diff().dropna()
+                    label = "Log + Fark"
+            elif col in OSCILLATORS:
+                # birinci fark
+                transformed = series.diff().dropna()
+                label = "Birinci Fark"
             else:
-                return "Çelişkili ⚠️", "orange", "dfgls"
+                transformed = series.diff().dropna()
+                label = "Birinci Fark"
+            return transformed, label
 
-        # Hangi sütunlara test uygulanacak
-        test_cols = [c for c in df.columns if c in [
-            "Open", "High", "Low", "Close", "Volume",
-            "EMA_20", "EMA_50", "EMA_200",
-            "RSI", "MACD", "MACD_Signal", "MACD_Hist",
-            "ATR", "BB_Upper", "BB_Lower", "BBW", "Supertrend"
-        ]]
+        # ----------------------------------------------------------
+        # Ana Test Döngüsü
+        # ----------------------------------------------------------
+
+        test_cols = [c for c in df.columns if c in
+                     PRICE_LIKE | VOLUME_LIKE | VOL_MEASURE | OSCILLATORS]
 
         results = []
-
         progress = st.progress(0, text="Testler çalışıyor...")
 
         for idx, col in enumerate(test_cols):
             series = df[col].dropna()
-            adf_p, adf_stat = run_adf(series)
-            kpss_p, kpss_stat = run_kpss(series)
-            verdict, color, extra = interpret(adf_p, kpss_p)
 
-            dfgls_p = None
-            dfgls_note = ""
-            if extra == "dfgls":
-                # Trend var mı? Fiyat bazlı seriler için 'ct', osilatörler için 'c'
-                price_like = col in ["Open", "High", "Low", "Close",
-                                     "EMA_20", "EMA_50", "EMA_200",
-                                     "BB_Upper", "BB_Lower", "Supertrend"]
-                trend_opt = 'ct' if price_like else 'c'
-                dfgls_p = dfgls_test(series, trend=trend_opt)
+            # --- Ham seri testleri ---
+            adf_p, _ = run_adf(series)
+            kpss_p, _ = run_kpss(series)
+            stat = is_stationary(adf_p, kpss_p)
+
+            price_like_flag = col in PRICE_LIKE
+            dfgls_note = "—"
+            transform_label = "—"
+            transform_verdict = "—"
+
+            # Çelişkili → DF-GLS
+            if stat is None:
+                dfgls_p = dfgls_test(series, price_like=price_like_flag)
                 if dfgls_p is not None:
-                    if dfgls_p < 0.05:
-                        verdict = "Durağan (DF-GLS) ✅"
-                        color = "green"
-                        dfgls_note = f"DF-GLS p={dfgls_p:.3f}"
-                    else:
-                        verdict = "Durağan Değil (DF-GLS) ❌"
-                        color = "red"
-                        dfgls_note = f"DF-GLS p={dfgls_p:.3f}"
+                    dfgls_note = f"p={dfgls_p:.3f}"
+                    stat = dfgls_p < 0.05
+
+            # Ham seri durağan değilse → dönüşüm uygula
+            if stat is False:
+                transformed, transform_label = get_transform(col, series)
+                t_adf_p, _ = run_adf(transformed)
+                t_kpss_p, _ = run_kpss(transformed)
+                t_stat = is_stationary(t_adf_p, t_kpss_p)
+
+                # Çelişkili çıkarsa DF-GLS
+                if t_stat is None:
+                    t_dfgls_p = dfgls_test(transformed, price_like=False)
+                    if t_dfgls_p is not None:
+                        t_stat = t_dfgls_p < 0.05
+
+                if t_stat is True:
+                    transform_verdict = "Durağan ✅"
+                elif t_stat is False:
+                    transform_verdict = "Hâlâ Durağan Değil ⚠️"
+                else:
+                    transform_verdict = "Belirsiz ?"
+
+                ham_sonuc = "Durağan Değil ❌"
+                ham_color = "red"
+            elif stat is True:
+                ham_sonuc = "Durağan ✅"
+                ham_color = "green"
+            else:
+                ham_sonuc = "Belirsiz ?"
+                ham_color = "orange"
 
             results.append({
                 "Değişken": col,
                 "ADF p": f"{adf_p:.3f}" if adf_p is not None else "—",
                 "KPSS p": f"{kpss_p:.3f}" if kpss_p is not None else "—",
-                "DF-GLS": dfgls_note if dfgls_note else "—",
-                "Sonuç": verdict,
-                "_color": color
+                "DF-GLS": dfgls_note,
+                "Ham Sonuç": ham_sonuc,
+                "Önerilen Dönüşüm": transform_label,
+                "Dönüşüm Sonrası": transform_verdict,
+                "_color": ham_color,
+                "_needs_transform": stat is False
             })
 
             progress.progress((idx + 1) / len(test_cols), text=f"Test ediliyor: {col}")
 
         progress.empty()
 
-        # Sonuçları grupla
-        stationary = [r for r in results if r["_color"] == "green"]
-        nonstationary = [r for r in results if r["_color"] == "red"]
-        conflicting = [r for r in results if r["_color"] == "orange"]
+        # ----------------------------------------------------------
+        # Sonuç Tabloları
+        # ----------------------------------------------------------
 
-        def render_table(rows):
+        stationary     = [r for r in results if r["_color"] == "green"]
+        nonstationary  = [r for r in results if r["_color"] == "red"]
+        conflicting    = [r for r in results if r["_color"] == "orange"]
+
+        def render_ham_table(rows):
             display = pd.DataFrame([{
-                "Değişken": r["Değişken"],
-                "ADF p": r["ADF p"],
-                "KPSS p": r["KPSS p"],
-                "DF-GLS": r["DF-GLS"],
-                "Sonuç": r["Sonuç"]
+                "Değişken":   r["Değişken"],
+                "ADF p":      r["ADF p"],
+                "KPSS p":     r["KPSS p"],
+                "DF-GLS p":   r["DF-GLS"],
+                "Sonuç":      r["Ham Sonuç"],
+            } for r in rows])
+            st.dataframe(display, use_container_width=True, hide_index=True)
+
+        def render_transform_table(rows):
+            display = pd.DataFrame([{
+                "Değişken":          r["Değişken"],
+                "Ham Sonuç":         r["Ham Sonuç"],
+                "Önerilen Dönüşüm":  r["Önerilen Dönüşüm"],
+                "Dönüşüm Sonrası":   r["Dönüşüm Sonrası"],
             } for r in rows])
             st.dataframe(display, use_container_width=True, hide_index=True)
 
         if stationary:
-            st.markdown("### ✅ Durağan Değişkenler")
-            render_table(stationary)
+            st.markdown("### ✅ Ham Haliyle Durağan")
+            render_ham_table(stationary)
 
         if nonstationary:
-            st.markdown("### ❌ Durağan Olmayan Değişkenler")
-            render_table(nonstationary)
-            st.info(
-                "**Önerilen işlem:** Fiyat bazlı seriler (Close, EMA vb.) için log return alın. "
-                "Hacim için log farkı alın. Ardından testleri tekrarlayın."
-            )
+            st.markdown("### ❌ Durağan Değil → Dönüşüm Uygulandı")
+            render_transform_table(nonstationary)
+            # Hâlâ durağan olmayan varsa uyar
+            still_bad = [r for r in nonstationary if "Hâlâ" in r["Dönüşüm Sonrası"]]
+            if still_bad:
+                cols_bad = ", ".join(r["Değişken"] for r in still_bad)
+                st.warning(
+                    f"**{cols_bad}** dönüşüm sonrası hâlâ durağan değil. "
+                    "Yapısal kırılma testi (Lee-Strazicich) veya ikinci fark önerilebilir."
+                )
 
         if conflicting:
-            st.markdown("### ⚠️ Çelişkili Sonuçlar (DF-GLS ile karar verildi)")
-            render_table(conflicting)
-            st.info(
-                "**Not:** ADF ve KPSS çeliştiğinde DF-GLS testi kullanıldı. "
-                "Sonuç hâlâ belirsizse yapısal kırılma testini (Lee-Strazicich) uygulayın "
-                "veya sensitivity analysis yapın."
-            )
+            st.markdown("### ⚠️ Çelişkili (DF-GLS ile karar verildi)")
+            render_ham_table(conflicting)
 
+        # ----------------------------------------------------------
         # Özet
+        # ----------------------------------------------------------
         st.markdown("---")
-        total = len(results)
-        n_stat = len(stationary)
+        total     = len(results)
+        n_stat    = len(stationary)
         n_nonstat = len(nonstationary)
-        n_conf = len(conflicting)
+        n_conf    = len(conflicting)
+        n_fixed   = sum(1 for r in nonstationary if r["Dönüşüm Sonrası"] == "Durağan ✅")
 
         st.markdown(f"""
         <div class="info-box">
             <b>Özet:</b> {total} değişken test edildi.<br>
-            ✅ Durağan: <b>{n_stat}</b> &nbsp;|&nbsp;
-            ❌ Durağan Değil: <b>{n_nonstat}</b> &nbsp;|&nbsp;
+            ✅ Ham durağan: <b>{n_stat}</b> &nbsp;|&nbsp;
+            ❌ Durağan değil: <b>{n_nonstat}</b>
+            (dönüşümle düzeltilen: <b>{n_fixed}</b>) &nbsp;|&nbsp;
             ⚠️ Çelişkili: <b>{n_conf}</b>
         </div>
         """, unsafe_allow_html=True)
 
-        # Metodoloji notu
-        with st.expander("📖 Test Metodolojisi"):
+        with st.expander("📖 Test Metodolojisi & Dönüşüm Kuralları"):
             st.markdown("""
-**ADF (Augmented Dickey-Fuller)**
-- H₀: Seri birim kök içeriyor (durağan değil)
-- p < 0.05 → H₀ reddedilir → **Durağan**
+**ADF:** H₀ = birim kök var → p < 0.05 → durağan
+**KPSS:** H₀ = durağan → p < 0.05 → durağan değil
+**DF-GLS:** ADF/KPSS çelişirse devreye girer; fiyat serilerinde trend+sabit, osilatörlerde sabit parametresiyle çalışır.
 
-**KPSS (Kwiatkowski-Phillips-Schmidt-Shin)**
-- H₀: Seri durağan
-- p < 0.05 → H₀ reddedilir → **Durağan değil**
-
-**İki test birlikte yorumlanır:**
-- ADF durağan + KPSS durağan → ✅ Durağan
-- ADF durağan değil + KPSS durağan değil → ❌ Durağan değil
-- Çelişki → DF-GLS ile karar verilir
-
-**DF-GLS:** Fiyat bazlı seriler için trend+sabit, osilatörler için sadece sabit seçeneği kullanılır.
+**Dönüşüm Kuralları:**
+| Grup | Değişkenler | Uygulanan Dönüşüm |
+|------|-------------|-------------------|
+| Fiyat bazlı | Close, Open, High, Low, EMA'lar, BB bantları, Supertrend | Log Return |
+| Hacim | Volume | Log Fark |
+| Volatilite | ATR, BBW | Log → yetmezse Log+Fark |
+| Osilatörler | RSI, MACD, MACD_Signal, MACD_Hist | Birinci Fark |
             """)
