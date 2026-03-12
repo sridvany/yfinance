@@ -29,7 +29,7 @@ if symbol:
 
     # En eski veriyi bul
     try:
-        hist_max = ticker.history(period="max")
+        hist_max = ticker.history(period="max", actions=False)
         if hist_max.empty:
             st.error(f"'{symbol}' için veri bulunamadı. Sembolü kontrol edin.")
             st.stop()
