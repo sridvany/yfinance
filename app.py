@@ -206,7 +206,7 @@ if symbol:
                    "BB_Upper", "BB_Lower", "Supertrend"}
     VOLUME_LIKE = {"Volume"}
     VOL_MEASURE = {"ATR", "BBW"}
-    OSCILLATORS = {"RSI", "MACD", "MACD_Signal", "MACD_Hist"}
+    OSCILLATORS = {"RSI", "MACD"}
     ALL_TEST    = PRICE_LIKE | VOLUME_LIKE | VOL_MEASURE | OSCILLATORS
 
     from statsmodels.tsa.stattools import adfuller, kpss
