@@ -86,26 +86,63 @@ def calc_supertrend(high, low, close, period=10, multiplier=3.0):
 
 symbol = st.text_input("Sembol", placeholder="Örn: THYAO.IS, AAPL, BTC-USD")
 
+# Interval seçimi
+INTERVAL_OPTIONS = {
+    "1 Dakika":  "1m",
+    "2 Dakika":  "2m",
+    "5 Dakika":  "5m",
+    "15 Dakika": "15m",
+    "30 Dakika": "30m",
+    "1 Saat":    "1h",
+    "1 Gün":     "1d",
+    "1 Hafta":   "1wk",
+    "1 Ay":      "1mo",
+}
+# yfinance maksimum geçmiş sınırları (gün cinsinden)
+INTERVAL_MAX_DAYS = {
+    "1m": 30, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
+    "1h": 730, "1d": None, "1wk": None, "1mo": None,
+}
+
+selected_interval_label = st.selectbox("Zaman Dilimi", list(INTERVAL_OPTIONS.keys()), index=6)
+interval = INTERVAL_OPTIONS[selected_interval_label]
+is_intraday = interval in ("1m", "2m", "5m", "15m", "30m", "1h")
+max_days = INTERVAL_MAX_DAYS.get(interval)
+
+if is_intraday and max_days:
+    st.info(f"⏱ **{selected_interval_label}** verisi için yfinance en fazla **son {max_days} günlük** veri sunuyor.")
+
 if symbol:
     ticker = yf.Ticker(symbol)
+
+    # --- Veri çekme: intraday vs günlük/haftalık/aylık ---
     try:
-        hist_max = ticker.history(period="max", actions=False)
+        if is_intraday:
+            period_str = f"{max_days}d"
+            hist_max = ticker.history(period=period_str, interval=interval, actions=False)
+        else:
+            hist_max = ticker.history(period="max", interval=interval, actions=False)
+
         if hist_max.empty:
-            st.error(f"'{symbol}' için veri bulunamadı.")
+            st.error(f"'{symbol}' için '{selected_interval_label}' verisinde veri bulunamadı.")
             st.stop()
     except Exception as e:
         st.error(f"Hata: {e}")
         st.stop()
 
-    hist_max.index = hist_max.index.tz_localize(None)
+    # Timezone kaldır
+    if hist_max.index.tz is not None:
+        hist_max.index = hist_max.index.tz_localize(None)
+
     oldest_date = hist_max.index.min().date()
     newest_date = hist_max.index.max().date()
+    bar_label = "bar" if is_intraday else "gün"
 
     st.markdown(f"""
     <div class="info-box">
         <b>En eski veri tarihi:</b> {oldest_date}<br>
         <b>En yeni veri tarihi:</b> {newest_date}<br>
-        <b>Toplam veri günü:</b> {len(hist_max):,}
+        <b>Toplam {bar_label} sayısı:</b> {len(hist_max):,}
     </div>
     """, unsafe_allow_html=True)
 
@@ -141,7 +178,7 @@ if symbol:
 
     st.markdown(f"""
     <div class="info-box">
-        <b>Seçilen aralıktaki veri günü:</b> {len(df):,}<br>
+        <b>Seçilen aralıktaki {bar_label} sayısı:</b> {len(df):,}<br>
         <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}
     </div>
     """, unsafe_allow_html=True)
@@ -183,13 +220,13 @@ if symbol:
 
     st.subheader("İndir")
     export_df = df[selected_cols].copy()
-    export_df.index.name = "Date"
+    export_df.index.name = "Datetime" if is_intraday else "Date"
     export_df = export_df.reset_index()
     excel_buf = BytesIO()
     with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="Data")
     excel_buf.seek(0)
-    file_name = f"{symbol.replace('.', '_')}_{start_date}_{end_date}.xlsx"
+    file_name = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}.xlsx"
     st.download_button(
         label=f"📥 Excel İndir ({len(export_df):,} satır)",
         data=excel_buf.getvalue(),
@@ -217,7 +254,8 @@ if symbol:
             if len(clean) < 20: return None, None
             r = adfuller(clean, autolag='AIC')
             return r[1], r[0]
-        except: return None, None
+        except Exception:
+            return None, None
 
     def run_kpss(series):
         try:
@@ -227,29 +265,33 @@ if symbol:
                 warnings.simplefilter("ignore")
                 r = kpss(clean, regression='c', nlags='auto')
             return r[1], r[0]
-        except: return None, None
+        except Exception:
+            return None, None
 
     def run_dfgls(series, price_like=False):
+        """arch kütüphanesinin DFGLS sınıfını kullanarak gerçek DF-GLS testi uygular."""
         try:
-            from statsmodels.regression.linear_model import OLS
-            from statsmodels.tools import add_constant
-            t = np.arange(len(series))
-            X = add_constant(np.column_stack([t])) if price_like else add_constant(np.ones(len(series)))
-            resid = series.values - OLS(series.values, X).fit().fittedvalues
-            r = adfuller(resid, autolag='AIC', regression='n')
-            return r[1]
-        except: return None
+            from arch.unitroot import DFGLS
+            clean = series.dropna()
+            if len(clean) < 20:
+                return None
+            trend = "ct" if price_like else "c"
+            result = DFGLS(clean, trend=trend)
+            return result.pvalue
+        except Exception:
+            return None
 
     def run_pp(series):
+        """arch kütüphanesinin PhillipsPerron sınıfını kullanarak gerçek PP testi uygular."""
         try:
-            from statsmodels.tsa.stattools import PhillipsPerron
+            from arch.unitroot import PhillipsPerron
             clean = series.dropna()
-            if len(clean) < 20: return None
-            return PhillipsPerron(clean).pvalue
-        except:
-            try:
-                return adfuller(series.dropna(), autolag='AIC', regression='ct')[1]
-            except: return None
+            if len(clean) < 20:
+                return None
+            result = PhillipsPerron(clean, trend="c")
+            return result.pvalue
+        except Exception:
+            return None
 
     def is_stat(adf_p, kpss_p):
         if adf_p is None or kpss_p is None: return None
@@ -418,7 +460,7 @@ if symbol:
                 rows_out = []
                 for i in range(clean.shape[1]):
                     try:    vif_val = variance_inflation_factor(clean.values, i)
-                    except: vif_val = np.nan
+                    except Exception: vif_val = np.nan
                     rows_out.append({"Değişken": clean.columns[i], "VIF": round(vif_val, 2)})
                 return pd.DataFrame(rows_out)
 
