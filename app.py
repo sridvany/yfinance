@@ -2,13 +2,14 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 import base64
-import warnings
+from scipy import stats
 
 st.set_page_config(page_title="yfinance veri indirici", layout="centered")
 
@@ -47,33 +48,35 @@ def calc_macd(series, fast=12, slow=26, signal=9):
     return macd_line, signal_line, macd_line - signal_line
 
 def calc_atr(high, low, close, period=14):
-    tr = pd.concat([high - low,
-                    (high - close.shift(1)).abs(),
-                    (low - close.shift(1)).abs()], axis=1).max(axis=1)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low  - close.shift(1)).abs()
+    ], axis=1).max(axis=1)
     return tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
 
 def calc_bollinger(close, period=20, std_dev=2):
-    sma = close.rolling(window=period).mean()
-    std = close.rolling(window=period).std()
+    sma     = close.rolling(window=period).mean()
+    std     = close.rolling(window=period).std()
     bb_upper = sma + std_dev * std
     bb_lower = sma - std_dev * std
     return bb_upper, bb_lower, (bb_upper - bb_lower) / sma
 
 def calc_supertrend(high, low, close, period=10, multiplier=3.0):
-    atr = calc_atr(high, low, close, period)
-    hl2 = (high + low) / 2
-    upper_band = hl2 + multiplier * atr
-    lower_band = hl2 - multiplier * atr
-    supertrend = pd.Series(np.nan, index=close.index)
-    direction  = pd.Series(1, index=close.index)
+    atr         = calc_atr(high, low, close, period)
+    hl2         = (high + low) / 2
+    upper_band  = hl2 + multiplier * atr
+    lower_band  = hl2 - multiplier * atr
+    supertrend  = pd.Series(np.nan, index=close.index)
+    direction   = pd.Series(1, index=close.index)
     for i in range(1, len(close)):
-        if close.iloc[i] > upper_band.iloc[i - 1]:
+        if   close.iloc[i] > upper_band.iloc[i - 1]:
             direction.iloc[i] = 1
         elif close.iloc[i] < lower_band.iloc[i - 1]:
             direction.iloc[i] = -1
         else:
             direction.iloc[i] = direction.iloc[i - 1]
-            if direction.iloc[i] == 1 and lower_band.iloc[i] < lower_band.iloc[i - 1]:
+            if direction.iloc[i] ==  1 and lower_band.iloc[i] < lower_band.iloc[i - 1]:
                 lower_band.iloc[i] = lower_band.iloc[i - 1]
             if direction.iloc[i] == -1 and upper_band.iloc[i] > upper_band.iloc[i - 1]:
                 upper_band.iloc[i] = upper_band.iloc[i - 1]
@@ -86,7 +89,6 @@ def calc_supertrend(high, low, close, period=10, multiplier=3.0):
 
 symbol = st.text_input("Sembol", placeholder="Örn: THYAO.IS, AAPL, BTC-USD")
 
-# Interval seçimi
 INTERVAL_OPTIONS = {
     "1 Dakika":  "1m",
     "2 Dakika":  "2m",
@@ -98,16 +100,15 @@ INTERVAL_OPTIONS = {
     "1 Hafta":   "1wk",
     "1 Ay":      "1mo",
 }
-# yfinance maksimum geçmiş sınırları (gün cinsinden)
 INTERVAL_MAX_DAYS = {
     "1m": 30, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
     "1h": 730, "1d": None, "1wk": None, "1mo": None,
 }
 
 selected_interval_label = st.selectbox("Zaman Dilimi", list(INTERVAL_OPTIONS.keys()), index=6)
-interval = INTERVAL_OPTIONS[selected_interval_label]
+interval   = INTERVAL_OPTIONS[selected_interval_label]
 is_intraday = interval in ("1m", "2m", "5m", "15m", "30m", "1h")
-max_days = INTERVAL_MAX_DAYS.get(interval)
+max_days   = INTERVAL_MAX_DAYS.get(interval)
 
 if is_intraday and max_days:
     st.info(f"⏱ **{selected_interval_label}** verisi için yfinance en fazla **son {max_days} günlük** veri sunuyor.")
@@ -115,11 +116,9 @@ if is_intraday and max_days:
 if symbol:
     ticker = yf.Ticker(symbol)
 
-    # --- Veri çekme: intraday vs günlük/haftalık/aylık ---
     try:
         if is_intraday:
-            period_str = f"{max_days}d"
-            hist_max = ticker.history(period=period_str, interval=interval, actions=False)
+            hist_max = ticker.history(period=f"{max_days}d", interval=interval, actions=False)
         else:
             hist_max = ticker.history(period="max", interval=interval, actions=False)
 
@@ -130,13 +129,12 @@ if symbol:
         st.error(f"Hata: {e}")
         st.stop()
 
-    # Timezone kaldır
     if hist_max.index.tz is not None:
         hist_max.index = hist_max.index.tz_localize(None)
 
     oldest_date = hist_max.index.min().date()
     newest_date = hist_max.index.max().date()
-    bar_label = "bar" if is_intraday else "gün"
+    bar_label   = "bar" if is_intraday else "gün"
 
     st.markdown(f"""
     <div class="info-box">
@@ -158,22 +156,22 @@ if symbol:
         st.stop()
 
     mask = (hist_max.index.date >= start_date) & (hist_max.index.date <= end_date)
-    df = hist_max.loc[mask].copy()
+    df   = hist_max.loc[mask].copy()
     if df.empty:
         st.warning("Seçilen tarih aralığında veri yok.")
         st.stop()
 
     close = df["Close"]; high = df["High"]; low = df["Low"]
-    df["EMA_20"] = calc_ema(close, 20)
-    df["EMA_50"] = calc_ema(close, 50)
-    df["EMA_200"] = calc_ema(close, 200)
-    df["RSI"] = calc_rsi(close)
-    df["MACD"] = calc_macd(close)[0]
-    df["ATR"] = calc_atr(high, low, close)
+    df["EMA_20"]    = calc_ema(close, 20)
+    df["EMA_50"]    = calc_ema(close, 50)
+    df["EMA_200"]   = calc_ema(close, 200)
+    df["RSI"]       = calc_rsi(close)
+    df["MACD"]      = calc_macd(close)[0]
+    df["ATR"]       = calc_atr(high, low, close)
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
 
-    check_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+    check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
 
     st.markdown(f"""
@@ -183,11 +181,15 @@ if symbol:
     </div>
     """, unsafe_allow_html=True)
 
+    # ============================================================
+    # Veri Seçimi
+    # ============================================================
+
     st.subheader("Veri Seçimi")
     available_cols = list(df.columns)
     st.caption("İndirmek istediğiniz verileri seçin:")
     selected_cols = []
-    cols_per_row = 4
+    cols_per_row  = 4
     rows = [available_cols[i:i+cols_per_row] for i in range(0, len(available_cols), cols_per_row)]
     for row in rows:
         checkbox_cols = st.columns(len(row))
@@ -200,6 +202,10 @@ if symbol:
         st.info("En az bir sütun seçmelisiniz.")
         st.stop()
 
+    # ============================================================
+    # Kapanış Grafiği
+    # ============================================================
+
     if "Close" in df.columns:
         st.subheader("Kapanış Grafiği")
         fig, ax = plt.subplots(figsize=(10, 4))
@@ -210,13 +216,17 @@ if symbol:
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
         buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode()
+        img_b64 = base64.b64encode(buf.read()).decode()
         plt.close(fig)
         st.markdown("*Görsele sağ tıklayıp kopyalayabilirsiniz:*")
         st.markdown(
-            f'<img src="data:image/png;base64,{img_base64}" style="width:100%; border-radius:8px;" />',
+            f'<img src="data:image/png;base64,{img_b64}" style="width:100%; border-radius:8px;" />',
             unsafe_allow_html=True
         )
+
+    # ============================================================
+    # Excel İndir
+    # ============================================================
 
     st.subheader("İndir")
     export_df = df[selected_cols].copy()
@@ -235,277 +245,172 @@ if symbol:
     )
 
     # ============================================================
-    # GRUP / FONKSİYON TANIMLARI (durağanlık + VIF için ortak)
-    # ============================================================
-
-    PRICE_LIKE  = {"Open", "High", "Low", "Close",
-                   "EMA_20", "EMA_50", "EMA_200",
-                   "BB_Upper", "BB_Lower", "Supertrend"}
-    VOLUME_LIKE = {"Volume"}
-    VOL_MEASURE = {"ATR", "BBW"}
-    OSCILLATORS = {"RSI", "MACD"}
-    ALL_TEST    = PRICE_LIKE | VOLUME_LIKE | VOL_MEASURE | OSCILLATORS
-
-    from statsmodels.tsa.stattools import adfuller, kpss
-
-    def run_adf(series):
-        try:
-            clean = series.dropna()
-            if len(clean) < 20: return None, None
-            r = adfuller(clean, autolag='AIC')
-            return r[1], r[0]
-        except Exception:
-            return None, None
-
-    def run_kpss(series):
-        try:
-            clean = series.dropna()
-            if len(clean) < 20: return None, None
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                r = kpss(clean, regression='c', nlags='auto')
-            return r[1], r[0]
-        except Exception:
-            return None, None
-
-    def run_dfgls(series, price_like=False):
-        """arch kütüphanesinin DFGLS sınıfını kullanarak gerçek DF-GLS testi uygular."""
-        try:
-            from arch.unitroot import DFGLS
-            clean = series.dropna()
-            if len(clean) < 20:
-                return None
-            trend = "ct" if price_like else "c"
-            result = DFGLS(clean, trend=trend)
-            return result.pvalue
-        except Exception:
-            return None
-
-    def run_pp(series):
-        """arch kütüphanesinin PhillipsPerron sınıfını kullanarak gerçek PP testi uygular."""
-        try:
-            from arch.unitroot import PhillipsPerron
-            clean = series.dropna()
-            if len(clean) < 20:
-                return None
-            result = PhillipsPerron(clean, trend="c")
-            return result.pvalue
-        except Exception:
-            return None
-
-    def is_stat(adf_p, kpss_p):
-        if adf_p is None or kpss_p is None: return None
-        if adf_p < 0.05 and kpss_p >= 0.05: return True
-        if adf_p >= 0.05 and kpss_p < 0.05: return False
-        return None
-
-    def get_transform(col, series):
-        if col in PRICE_LIKE:
-            return np.log(series.replace(0, np.nan)).diff().dropna(), "Log Return [ln(Pt/Pt-1)]"
-        elif col in VOLUME_LIKE:
-            return np.log(series.replace(0, np.nan)).diff().dropna(), "Log Fark"
-        elif col in VOL_MEASURE:
-            log_s = np.log(series.replace(0, np.nan)).dropna()
-            if is_stat(*run_adf(log_s)[:1] + run_kpss(log_s)[:1]):
-                return log_s, "Log Dönüşümü"
-            return log_s.diff().dropna(), "Log + Fark"
-        else:
-            return series.diff().dropna(), "Birinci Fark"
-
-    def resolve_stat(series, price_like_flag):
-        """ADF+KPSS → DF-GLS → PP → muhafazakar hiyerarşisiyle karar ver."""
-        adf_p, _ = run_adf(series)
-        kpss_p, _ = run_kpss(series)
-        stat = is_stat(adf_p, kpss_p)
-        dfgls_note = pp_note = "—"
-        karar = "ADF+KPSS"
-
-        if stat is None:
-            p = run_dfgls(series, price_like=price_like_flag)
-            if p is not None:
-                dfgls_note = f"p={p:.3f}"
-                stat = p < 0.05
-                karar = "DF-GLS"
-
-        if stat is None:
-            p = run_pp(series)
-            if p is not None:
-                pp_note = f"p={p:.3f}"
-                stat = p < 0.05
-                karar = "PP"
-
-        if stat is None:
-            stat = False
-            karar = "Muhafazakar"
-
-        return stat, adf_p, kpss_p, dfgls_note, pp_note, karar
-
-    test_cols = [c for c in df.columns if c in ALL_TEST and c in selected_cols]
-
-    # ============================================================
-    # DURAĞANLIK ANALİZİ
+    # SPEARMAN KORELASYON ANALİZİ
     # ============================================================
 
     st.divider()
-    st.subheader("🔬 Durağanlık Analizi")
+    st.subheader("🔗 Spearman Korelasyon Analizi")
     st.caption(
-        "Her değişken için ADF → KPSS → DF-GLS → PP hiyerarşisi uygulanır. "
-        "Durağan olmayan seriler için otomatik dönüşüm yapılır."
+        "Seçilen sayısal sütunlar arasında Spearman sıra korelasyonu ve p-değerleri hesaplanır. "
+        "Parametrik olmayan bu yöntem, lineer olmayan ilişkileri de yakalar."
     )
 
-    if st.button("Durağanlık Testlerini Çalıştır"):
-        results = []
-        progress = st.progress(0, text="Testler çalışıyor...")
+    numeric_cols = [c for c in selected_cols if pd.api.types.is_numeric_dtype(df[c])]
 
-        for idx, col in enumerate(test_cols):
-            series = df[col].dropna()
-            price_like_flag = col in PRICE_LIKE
-            stat, adf_p, kpss_p, dfgls_note, pp_note, karar = resolve_stat(series, price_like_flag)
+    if len(numeric_cols) < 2:
+        st.info("Spearman analizi için en az 2 sayısal sütun seçmelisiniz.")
+    else:
+        alpha = st.slider(
+            "Anlamlılık Eşiği (α)",
+            min_value=0.01, max_value=0.10, value=0.05, step=0.01,
+            help="Bu değerin altındaki p-değerleri istatistiksel olarak anlamlı kabul edilir."
+        )
 
-            transform_label = transform_verdict = "—"
-            if not stat:
-                transformed, transform_label = get_transform(col, series)
-                t_stat, t_adf_p, t_kpss_p, _, _, _ = resolve_stat(transformed, False)
-                transform_verdict = "Durağan ✅" if t_stat else "Hâlâ Durağan Değil ⚠️"
-                ham_sonuc = "Durağan Değil ❌"; ham_color = "red"
+        if st.button("Spearman Korelasyonunu Hesapla"):
+            sub = df[numeric_cols].dropna()
+            n   = len(sub)
+            k   = len(numeric_cols)
+
+            # Spearman rho ve p matrisleri
+            rho_mat = pd.DataFrame(np.nan, index=numeric_cols, columns=numeric_cols)
+            p_mat   = pd.DataFrame(np.nan, index=numeric_cols, columns=numeric_cols)
+
+            for i, c1 in enumerate(numeric_cols):
+                for j, c2 in enumerate(numeric_cols):
+                    if i == j:
+                        rho_mat.loc[c1, c2] = 1.0
+                        p_mat.loc[c1, c2]   = 0.0
+                    elif i < j:
+                        rho, pval = stats.spearmanr(sub[c1], sub[c2])
+                        rho_mat.loc[c1, c2] = rho_mat.loc[c2, c1] = round(rho, 4)
+                        p_mat.loc[c1, c2]   = p_mat.loc[c2, c1]   = round(pval, 4)
+
+            st.session_state["spearman_rho"]   = rho_mat
+            st.session_state["spearman_p"]     = p_mat
+            st.session_state["spearman_n"]     = n
+            st.session_state["spearman_alpha"] = alpha
+            st.session_state["spearman_cols"]  = numeric_cols
+
+        # Gösterim
+        if "spearman_rho" in st.session_state:
+            rho_mat = st.session_state["spearman_rho"]
+            p_mat   = st.session_state["spearman_p"]
+            n       = st.session_state["spearman_n"]
+            alpha   = st.session_state["spearman_alpha"]
+            numeric_cols = st.session_state["spearman_cols"]
+
+            # --- Isı Haritası ---
+            st.markdown("### Korelasyon Isı Haritası")
+            fig2, ax2 = plt.subplots(figsize=(max(6, k * 0.9), max(5, k * 0.8)))
+            cmap   = plt.cm.RdYlGn
+            im     = ax2.imshow(rho_mat.values.astype(float), cmap=cmap, vmin=-1, vmax=1, aspect="auto")
+            plt.colorbar(im, ax=ax2, shrink=0.8, label="Spearman ρ")
+            ax2.set_xticks(range(k)); ax2.set_xticklabels(numeric_cols, rotation=45, ha="right", fontsize=9)
+            ax2.set_yticks(range(k)); ax2.set_yticklabels(numeric_cols, fontsize=9)
+            ax2.set_title(f"{symbol} — Spearman Korelasyon Matrisi (n={n})", fontsize=11, fontweight="bold")
+
+            for i in range(k):
+                for j in range(k):
+                    val = rho_mat.values[i, j]
+                    if not np.isnan(val):
+                        sig = (i != j) and (p_mat.values[i, j] < alpha)
+                        txt_color = "black" if abs(val) < 0.5 else "white"
+                        marker    = "*" if sig else ""
+                        ax2.text(j, i, f"{val:.2f}{marker}", ha="center", va="center",
+                                 fontsize=7.5, color=txt_color, fontweight="bold" if sig else "normal")
+
+            fig2.tight_layout()
+            buf2 = BytesIO()
+            fig2.savefig(buf2, format="png", dpi=150, bbox_inches="tight")
+            buf2.seek(0)
+            img_b64_2 = base64.b64encode(buf2.read()).decode()
+            plt.close(fig2)
+            st.markdown("*  = α düzeyinde istatistiksel olarak anlamlı &nbsp;|&nbsp; Görsele sağ tıklayıp kopyalayabilirsiniz.*")
+            st.markdown(
+                f'<img src="data:image/png;base64,{img_b64_2}" style="width:100%; border-radius:8px;" />',
+                unsafe_allow_html=True
+            )
+
+            # --- Anlamlı Çiftler Tablosu ---
+            st.markdown(f"### Anlamlı Korelasyonlar (p < {alpha})")
+            pairs = []
+            seen  = set()
+            for i, c1 in enumerate(numeric_cols):
+                for j, c2 in enumerate(numeric_cols):
+                    if i >= j:
+                        continue
+                    rho  = rho_mat.loc[c1, c2]
+                    pval = p_mat.loc[c1, c2]
+                    if not np.isnan(rho) and pval < alpha:
+                        pairs.append({
+                            "Değişken 1": c1,
+                            "Değişken 2": c2,
+                            "ρ":          rho,
+                            "p-değeri":   pval,
+                            "Yön":        "Pozitif ↑" if rho > 0 else "Negatif ↓",
+                            "Güç":        (
+                                "Çok Güçlü"  if abs(rho) >= 0.80 else
+                                "Güçlü"      if abs(rho) >= 0.60 else
+                                "Orta"       if abs(rho) >= 0.40 else
+                                "Zayıf"
+                            ),
+                        })
+
+            if pairs:
+                pairs_df = pd.DataFrame(pairs).sort_values("ρ", key=abs, ascending=False)
+
+                def color_rho(val):
+                    if not isinstance(val, float): return ""
+                    c = plt.cm.RdYlGn((val + 1) / 2)
+                    hex_c = mcolors.to_hex(c)
+                    text  = "black" if abs(val) < 0.5 else "white"
+                    return f"background-color: {hex_c}; color: {text}; font-weight: bold"
+
+                st.dataframe(
+                    pairs_df.style.applymap(color_rho, subset=["ρ"]),
+                    use_container_width=True, hide_index=True
+                )
+
+                # Excel indirme
+                excel_corr = BytesIO()
+                with pd.ExcelWriter(excel_corr, engine="openpyxl") as w:
+                    rho_mat.to_excel(w, sheet_name="Rho Matrisi")
+                    p_mat.to_excel(w, sheet_name="P Matrisi")
+                    pairs_df.to_excel(w, sheet_name="Anlamlı Çiftler", index=False)
+                excel_corr.seek(0)
+                st.download_button(
+                    label="📥 Korelasyon Sonuçlarını İndir (Excel)",
+                    data=excel_corr.getvalue(),
+                    file_name=f"{symbol.replace('.', '_')}_spearman_{start_date}_{end_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
             else:
-                ham_sonuc = "Durağan ✅"; ham_color = "green"
+                st.info(f"α = {alpha} düzeyinde anlamlı korelasyon bulunamadı.")
 
-            results.append({
-                "Değişken":          col,
-                "ADF p":             f"{adf_p:.3f}" if adf_p is not None else "—",
-                "KPSS p":            f"{kpss_p:.3f}" if kpss_p is not None else "—",
-                "DF-GLS p":          dfgls_note,
-                "PP p":              pp_note,
-                "Karar Dayanağı":    karar,
-                "Ham Sonuç":         ham_sonuc,
-                "Önerilen Dönüşüm":  transform_label,
-                "Dönüşüm Sonrası":   transform_verdict,
-                "_color":            ham_color,
-            })
-            progress.progress((idx + 1) / len(test_cols), text=f"Test ediliyor: {col}")
+            # --- Özet ---
+            total_pairs = k * (k - 1) // 2
+            sig_count   = len(pairs) if pairs else 0
+            st.markdown(f"""
+            <div class="info-box">
+                <b>Gözlem sayısı:</b> {n:,} &nbsp;|&nbsp;
+                <b>Test edilen çift:</b> {total_pairs} &nbsp;|&nbsp;
+                <b>Anlamlı çift (p &lt; {alpha}):</b> {sig_count}
+            </div>
+            """, unsafe_allow_html=True)
 
-        progress.empty()
-        st.session_state["stat_results"]   = results
-        st.session_state["stat_test_cols"] = test_cols
-
-    # Sonuçları göster (session_state'ten)
-    if "stat_results" in st.session_state:
-        results   = st.session_state["stat_results"]
-        test_cols = st.session_state["stat_test_cols"]
-
-        stationary    = [r for r in results if r["_color"] == "green"]
-        nonstationary = [r for r in results if r["_color"] == "red"]
-
-        if stationary:
-            st.markdown("### ✅ Ham Haliyle Durağan")
-            st.dataframe(pd.DataFrame([{
-                "Değişken": r["Değişken"], "ADF p": r["ADF p"], "KPSS p": r["KPSS p"],
-                "DF-GLS p": r["DF-GLS p"], "PP p": r["PP p"],
-                "Karar Dayanağı": r["Karar Dayanağı"], "Sonuç": r["Ham Sonuç"],
-            } for r in stationary]), use_container_width=True, hide_index=True)
-
-        if nonstationary:
-            st.markdown("### ❌ Durağan Değil → Dönüşüm Uygulandı")
-            st.dataframe(pd.DataFrame([{
-                "Değişken": r["Değişken"], "Karar Dayanağı": r["Karar Dayanağı"],
-                "Önerilen Dönüşüm": r["Önerilen Dönüşüm"], "Dönüşüm Sonrası": r["Dönüşüm Sonrası"],
-            } for r in nonstationary]), use_container_width=True, hide_index=True)
-            still_bad = [r["Değişken"] for r in nonstationary if "Hâlâ" in r["Dönüşüm Sonrası"]]
-            if still_bad:
-                st.warning(f"**{', '.join(still_bad)}** dönüşüm sonrası hâlâ durağan değil. "
-                           "Lee-Strazicich veya ikinci fark önerilebilir.")
-
-        n_cons = sum(1 for r in results if r["Karar Dayanağı"] == "Muhafazakar")
-        n_fixed = sum(1 for r in nonstationary if r["Dönüşüm Sonrası"] == "Durağan ✅")
-        st.markdown(f"""
-        <div class="info-box">
-            <b>Özet:</b> {len(results)} değişken test edildi. &nbsp;
-            ✅ Ham durağan: <b>{len(stationary)}</b> &nbsp;|&nbsp;
-            ❌ Durağan değil: <b>{len(nonstationary)}</b> (dönüşümle düzeltilen: <b>{n_fixed}</b>)
-            {"&nbsp;|&nbsp; ⚠️ Muhafazakar karar: <b>" + str(n_cons) + "</b>" if n_cons > 0 else ""}
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.expander("📖 Test Metodolojisi & Karar Hiyerarşisi"):
-            st.markdown("""
-**Karar hiyerarşisi:** ADF+KPSS → DF-GLS → PP → Muhafazakar (durağan değil say)
-
-| Grup | Dönüşüm |
-|------|---------|
-| Fiyat bazlı (Close, EMA'lar vb.) | Log Return |
-| Hacim | Log Fark |
-| Volatilite (ATR, BBW) | Log → yetmezse Log+Fark |
-| Osilatörler (RSI, MACD vb.) | Birinci Fark |
-            """)
-
-        # ============================================================
-        # VIF ANALİZİ
-        # ============================================================
-
-        st.divider()
-        st.subheader("📐 VIF Analizi (Çoklu Doğrusallık)")
-        st.caption("Ham ve dönüştürülmüş seriler için ayrı ayrı VIF hesaplanır.")
-
-        vif_threshold = st.slider("VIF Eşiği", min_value=2, max_value=20, value=10, step=1,
-                                  help="Bu eşiğin üzerindeki değişkenler çoklu doğrusallık içeriyor.")
-
-        if st.button("VIF Analizini Çalıştır"):
-            from statsmodels.stats.outliers_influence import variance_inflation_factor
-
-            def calc_vif(data_df):
-                clean = data_df.dropna()
-                if clean.shape[0] < clean.shape[1] + 1:
-                    return None
-                rows_out = []
-                for i in range(clean.shape[1]):
-                    try:    vif_val = variance_inflation_factor(clean.values, i)
-                    except Exception: vif_val = np.nan
-                    rows_out.append({"Değişken": clean.columns[i], "VIF": round(vif_val, 2)})
-                return pd.DataFrame(rows_out)
-
-            def style_vif(val):
-                if not isinstance(val, float): return ""
-                if val > vif_threshold:         return "color: red; font-weight: bold"
-                if val > vif_threshold / 2:     return "color: orange"
-                return ""
-
-            
-
-            # Dönüştürülmüş seriler
-            st.markdown("### Dönüştürülmüş (Durağan) Seriler")
-            trans_dict = {}
-            for col in test_cols:
-                r = next((x for x in results if x["Değişken"] == col), None)
-                if r is None: continue
-                series = df[col].dropna()
-                if r["Önerilen Dönüşüm"] == "—":
-                    trans_dict[col] = series
-                else:
-                    t_series, _ = get_transform(col, series)
-                    trans_dict[col] = t_series
-
-            vif_trans = calc_vif(pd.DataFrame(trans_dict))
-            if vif_trans is not None:
-                high = vif_trans[vif_trans["VIF"] > vif_threshold]
-                st.dataframe(vif_trans.style.applymap(style_vif, subset=["VIF"]),
-                             use_container_width=True, hide_index=True)
-                if not high.empty:
-                    st.warning(f"VIF > {vif_threshold}: **{', '.join(high['Değişken'].tolist())}** "
-                               "— dönüşüm sonrası hâlâ yüksek çoklu doğrusallık. PCA önerilebilir.")
-                else:
-                    st.success(f"Dönüştürülmüş serilerde tüm VIF ≤ {vif_threshold}.")
-            else:
-                st.warning("Yeterli gözlem yok.")
-
-            with st.expander("📖 VIF Yorumlama Rehberi"):
+            with st.expander("📖 Spearman Korelasyonu Hakkında"):
                 st.markdown(f"""
-| VIF | Yorum |
-|-----|-------|
-| 1 | Çoklu doğrusallık yok |
-| 1 – {vif_threshold//2} | Kabul edilebilir |
-| {vif_threshold//2} – {vif_threshold} | Orta düzey, dikkat |
-| > {vif_threshold} | Yüksek — sorun var |
+**Spearman ρ (rho):** Pearson'ın aksine ham değerler yerine sıralar üzerinden hesaplanır; 
+doğrusal olmayan monoton ilişkileri ve aykırı değerlere karşı dayanıklılığı sayesinde 
+finansal zaman serilerinde tercih edilir.
 
-**Çözüm:** Yüksek korelasyonlu değişkeni çıkar · PCA uygula · Ridge/Lasso kullan
+| |ρ| | Güç |
+|------|------|
+| 0.80 – 1.00 | Çok Güçlü |
+| 0.60 – 0.79 | Güçlü |
+| 0.40 – 0.59 | Orta |
+| 0.00 – 0.39 | Zayıf |
+
+**Not:** Yıldız (*) işaretli hücreler α = {alpha} düzeyinde anlamlıdır. 
+Korelasyon nedensellik anlamına gelmez.
                 """)
