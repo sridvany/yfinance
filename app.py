@@ -209,22 +209,37 @@ if symbol:
     # ============================================================
 
     if "Close" in df.columns:
+        import plotly.graph_objects as go
         st.subheader("Kapanış Grafiği")
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(df.index, df["Close"], color="#0d6efd", linewidth=1.2)
-        ax.set_title(f"{symbol} - Kapanış Fiyatı", fontsize=13, fontweight="bold")
-        ax.set_xlabel("Tarih"); ax.set_ylabel("Kapanış"); ax.grid(True, alpha=0.3)
-        fig.tight_layout()
-        buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        buf.seek(0)
-        img_b64 = base64.b64encode(buf.read()).decode()
-        plt.close(fig)
-        st.markdown("*Görsele sağ tıklayıp kopyalayabilirsiniz:*")
-        st.markdown(
-            f'<img src="data:image/png;base64,{img_b64}" style="width:100%; border-radius:8px;" />',
-            unsafe_allow_html=True
+        fig_px = go.Figure()
+        fig_px.add_trace(go.Scatter(
+            x=df.index, y=df["Close"],
+            mode="lines",
+            line=dict(color="#0d6efd", width=1.5),
+            name="Kapanış"
+        ))
+        fig_px.update_layout(
+            title=dict(text=f"{symbol} — Kapanış Fiyatı", font=dict(size=14)),
+            xaxis=dict(
+                title="Tarih",
+                rangeslider=dict(visible=True, thickness=0.07),
+                rangeselector=dict(
+                    buttons=[
+                        dict(count=1,  label="1A",  step="month", stepmode="backward"),
+                        dict(count=3,  label="3A",  step="month", stepmode="backward"),
+                        dict(count=6,  label="6A",  step="month", stepmode="backward"),
+                        dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
+                        dict(step="all", label="Tümü"),
+                    ],
+                    bgcolor="#f0f2f6", activecolor="#0d6efd",
+                )
+            ),
+            yaxis=dict(title="Kapanış", fixedrange=False),
+            hovermode="x unified",
+            height=420,
+            margin=dict(l=50, r=20, t=50, b=40),
         )
+        st.plotly_chart(fig_px, use_container_width=True)
 
     # ============================================================
     # Excel İndir
