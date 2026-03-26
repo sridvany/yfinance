@@ -302,6 +302,26 @@ if symbol:
             file_name=file_name_clean,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # 3. Excel: boş hücreli satırlar da çıkarılmış
+        df_clean2     = df_clean[clean_selected].dropna()
+        removed_nan   = len(df_clean) - len(df_clean2)
+        export_clean2 = df_clean2.copy()
+        export_clean2.index.name = "Datetime" if is_intraday else "Date"
+        export_clean2 = export_clean2.reset_index()
+
+        excel_clean2 = BytesIO()
+        with pd.ExcelWriter(excel_clean2, engine="openpyxl") as writer:
+            export_clean2.to_excel(writer, index=False, sheet_name="Data")
+        excel_clean2.seek(0)
+
+        file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
+        st.download_button(
+            label=f"📥 Excel İndir — OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
+            data=excel_clean2.getvalue(),
+            file_name=file_name_clean2,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
         st.warning("Filtreleme sonrası veri kalmadı.")
 
