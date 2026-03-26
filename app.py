@@ -221,25 +221,25 @@ if symbol:
             x=df.index, y=df["Close"],
             mode="lines",
             line=dict(color="#16a34a", width=1.5),
-            name="Kapanış"
+            name="Close"
         ))
         fig_px.update_layout(
             title="",
             xaxis=dict(
-                title="Tarih",
+                title="Date",
                 rangeslider=dict(visible=True, thickness=0.07),
                 rangeselector=dict(
                     buttons=[
-                        dict(count=1,  label="1A",  step="month", stepmode="backward"),
-                        dict(count=3,  label="3A",  step="month", stepmode="backward"),
-                        dict(count=6,  label="6A",  step="month", stepmode="backward"),
+                        dict(count=1,  label="1M",  step="month", stepmode="backward"),
+                        dict(count=3,  label="3M",  step="month", stepmode="backward"),
+                        dict(count=6,  label="6M",  step="month", stepmode="backward"),
                         dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
-                        dict(step="all", label="Tümü"),
+                        dict(step="all", label="All"),
                     ],
                     bgcolor="#f0f2f6", activecolor="#f0f2f6",
                 )
             ),
-            yaxis=dict(title="Kapanış", fixedrange=False),
+            yaxis=dict(title="Close", fixedrange=False),
             dragmode="pan",
             hovermode="x unified",
             height=420,
