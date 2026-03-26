@@ -220,7 +220,7 @@ if symbol:
             name="Kapanış"
         ))
         fig_px.update_layout(
-            title=None,
+            title="",
             xaxis=dict(
                 title="Tarih",
                 rangeslider=dict(visible=True, thickness=0.07),
