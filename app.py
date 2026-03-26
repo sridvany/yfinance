@@ -10,6 +10,7 @@ from io import BytesIO
 from datetime import datetime
 import base64
 from scipy import stats
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="yfinance veri indirici", layout="centered")
 
@@ -209,7 +210,6 @@ if symbol:
     # ============================================================
 
     if "Close" in df.columns:
-        import plotly.graph_objects as go
         st.subheader("Kapanış Grafiği")
         fig_px = go.Figure()
         fig_px.add_trace(go.Scatter(
