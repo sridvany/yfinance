@@ -267,6 +267,44 @@ if symbol:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+    # OHLC eşit satır filtreleyip indikatörleri yeniden hesapla
+    ohlc_mask   = ~((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
+    df_clean    = df[ohlc_mask][["Open", "High", "Low", "Close", "Volume"]].copy()
+    removed_cnt = len(df) - len(df_clean)
+
+    if not df_clean.empty:
+        _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]
+        df_clean["EMA_20"]    = calc_ema(_c, 20)
+        df_clean["EMA_50"]    = calc_ema(_c, 50)
+        df_clean["EMA_200"]   = calc_ema(_c, 200)
+        df_clean["RSI"]       = calc_rsi(_c)
+        df_clean["MACD"]      = calc_macd(_c)[0]
+        df_clean["ATR"]       = calc_atr(_h, _l, _c)
+        df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
+        df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
+        df_clean["Return"]    = np.log(_c).diff()
+
+        # Sadece kullanıcının seçtiği sütunları al (varsa)
+        clean_selected = [c for c in selected_cols if c in df_clean.columns]
+        export_clean   = df_clean[clean_selected].copy()
+        export_clean.index.name = "Datetime" if is_intraday else "Date"
+        export_clean   = export_clean.reset_index()
+
+        excel_clean = BytesIO()
+        with pd.ExcelWriter(excel_clean, engine="openpyxl") as writer:
+            export_clean.to_excel(writer, index=False, sheet_name="Data")
+        excel_clean.seek(0)
+
+        file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
+        st.download_button(
+            label=f"📥 Excel İndir — OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
+            data=excel_clean.getvalue(),
+            file_name=file_name_clean,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("Filtreleme sonrası veri kalmadı.")
+
     # ============================================================
     # SPEARMAN KORELASYON ANALİZİ
     # ============================================================
