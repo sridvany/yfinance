@@ -216,11 +216,11 @@ if symbol:
         fig_px.add_trace(go.Scatter(
             x=df.index, y=df["Close"],
             mode="lines",
-            line=dict(color="#0d6efd", width=1.5),
+            line=dict(color="#16a34a", width=1.5),
             name="Kapanış"
         ))
         fig_px.update_layout(
-            title=dict(text=f"{symbol} — Kapanış Fiyatı", font=dict(size=14)),
+            title=None,
             xaxis=dict(
                 title="Tarih",
                 rangeslider=dict(visible=True, thickness=0.07),
