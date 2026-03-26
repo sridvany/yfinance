@@ -236,11 +236,12 @@ if symbol:
                 )
             ),
             yaxis=dict(title="Kapanış", fixedrange=False),
+            dragmode="pan",
             hovermode="x unified",
             height=420,
             margin=dict(l=50, r=20, t=50, b=40),
         )
-        st.plotly_chart(fig_px, use_container_width=True)
+        st.plotly_chart(fig_px, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
 
     # ============================================================
     # Excel İndir
