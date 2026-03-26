@@ -176,12 +176,14 @@ if symbol:
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
     consec_dupes = int((df[check_cols].eq(df[check_cols].shift(1)).all(axis=1)).sum())
+    null_only    = int(df[check_cols].isnull().any(axis=1).sum())
 
     st.markdown(f"""
     <div class="info-box">
         <b>Seçilen aralıktaki {bar_label} sayısı:</b> {len(df):,}<br>
         <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}<br>
-        <b>Arka arkaya aynı OHLCV satır sayısı:</b> {consec_dupes:,}
+        <b>Arka arkaya aynı OHLCV satır sayısı:</b> {consec_dupes:,}<br>
+        <b>Boş hücresi olan satır sayısı (0 hariç):</b> {null_only:,}
     </div>
     """, unsafe_allow_html=True)
 
