@@ -232,7 +232,7 @@ if symbol:
                         dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
                         dict(step="all", label="Tümü"),
                     ],
-                    bgcolor="#f0f2f6", activecolor="#16a34a",
+                    bgcolor="#f0f2f6", activecolor="#f0f2f6",
                 )
             ),
             yaxis=dict(title="Kapanış", fixedrange=False),
