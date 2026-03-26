@@ -171,6 +171,7 @@ if symbol:
     df["ATR"]       = calc_atr(high, low, close)
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
+    df["Return"]     = np.log(close).diff()
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
