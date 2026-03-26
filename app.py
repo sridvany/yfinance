@@ -177,7 +177,7 @@ if symbol:
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
     consec_dupes = int((df[check_cols].eq(df[check_cols].shift(1)).all(axis=1)).sum())
     null_only    = int(df[check_cols].isnull().any(axis=1).sum())
-    adj_same     = int((df[check_cols].apply(lambda row: any(row.iloc[i] == row.iloc[i+1] for i in range(len(row)-1)), axis=1)).sum())
+    ohlc_same    = int(((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"])).sum())
 
     st.markdown(f"""
     <div class="info-box">
@@ -185,7 +185,7 @@ if symbol:
         <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}<br>
         <b>Arka arkaya aynı OHLCV satır sayısı:</b> {consec_dupes:,}<br>
         <b>Boş hücresi olan satır sayısı (0 hariç):</b> {null_only:,}<br>
-        <b>Yan yana aynı değer içeren satır sayısı:</b> {adj_same:,}
+        <b>Open=High=Low=Close olan satır sayısı:</b> {ohlc_same:,}
     </div>
     """, unsafe_allow_html=True)
 
