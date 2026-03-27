@@ -6,3 +6,5 @@ matplotlib
 scipy
 openpyxl
 plotly 
+scikit-learn
+statsmodels
