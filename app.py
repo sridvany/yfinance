@@ -158,6 +158,17 @@ def calc_volume_roc(volume, period=10):
     """Volume Rate of Change — hacim ivmesi (%)"""
     return ((volume - volume.shift(period)) / volume.shift(period)) * 100
 
+def calc_mfi(high, low, close, volume, period=14):
+    """Money Flow Index — RSI'nin hacim ağırlıklı versiyonu"""
+    typical_price  = (high + low + close) / 3
+    raw_money_flow = typical_price * volume
+    direction      = typical_price.diff()
+    pos_mf         = raw_money_flow.where(direction > 0, 0.0)
+    neg_mf         = raw_money_flow.where(direction < 0, 0.0)
+    pos_sum        = pos_mf.rolling(window=period).sum()
+    neg_sum        = neg_mf.rolling(window=period).sum()
+    return 100 - (100 / (1 + pos_sum / neg_sum))
+
 
 # ============================================================
 # Ana Uygulama
@@ -259,6 +270,7 @@ if symbol:
     df["OBV"]        = calc_obv(close, volume)
     df["CMF"]        = calc_cmf(high, low, close, volume)
     df["Volume_ROC"] = calc_volume_roc(volume)
+    df["MFI"]        = calc_mfi(high, low, close, volume)
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -382,6 +394,7 @@ if symbol:
         df_clean["OBV"]        = calc_obv(_c, _v)
         df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
         df_clean["Volume_ROC"] = calc_volume_roc(_v)
+        df_clean["MFI"]        = calc_mfi(_h, _l, _c, _v)
 
         clean_selected = [c for c in selected_cols if c in df_clean.columns]
         export_clean   = df_clean[clean_selected].copy()
