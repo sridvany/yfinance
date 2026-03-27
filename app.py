@@ -11,6 +11,9 @@ from datetime import datetime
 import base64
 from scipy import stats
 import plotly.graph_objects as go
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tsa.stattools import adfuller
+from sklearn.feature_selection import mutual_info_regression
 
 st.set_page_config(page_title="yfinance veri indirici", layout="centered")
 
@@ -499,10 +502,6 @@ Korelasyon nedensellik anlamına gelmez.
             "Adımlar zincir şeklinde: her adım öncekinden hayatta kalanlar üzerinde çalışır."
         )
 
-        from statsmodels.stats.outliers_influence import variance_inflation_factor
-        from statsmodels.tsa.stattools import adfuller
-        from sklearn.feature_selection import mutual_info_regression
-
         fs_df         = df_clean2.copy()
         target        = "Close"
         date_col_name = "Datetime" if is_intraday else "Date"
@@ -787,8 +786,22 @@ Korelasyon nedensellik anlamına gelmez.
             f"`{'`, `'.join(final_features)}`"
         )
 
-        final_cols   = [target] + [f for f in final_features if f in fs_df.columns and f != target]
-        export_final = fs_df[final_cols].copy()
+        # Checkbox seçim konsolu
+        st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
+        export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
+        final_selected = [target]  # Close her zaman dahil
+        fs_cols_per_row = 4
+        fs_rows = [export_candidates[i:i+fs_cols_per_row] for i in range(0, len(export_candidates), fs_cols_per_row)]
+        for fs_row in fs_rows:
+            fs_cb_cols = st.columns(len(fs_row))
+            for i, col_name in enumerate(fs_row):
+                with fs_cb_cols[i]:
+                    disabled = col_name == target
+                    checked  = st.checkbox(col_name, value=True, key=f"fs_cb_{col_name}", disabled=disabled)
+                    if checked and col_name not in final_selected:
+                        final_selected.append(col_name)
+
+        export_final = fs_df[final_selected].copy()
         export_final.index.name = date_col_name
         export_final = export_final.reset_index()
 
@@ -798,7 +811,7 @@ Korelasyon nedensellik anlamına gelmez.
         buf_final.seek(0)
 
         st.download_button(
-            label=f"📥 Seçili Feature'ları İndir — {len(final_cols)} sütun, {len(export_final):,} satır",
+            label=f"📥 Seçili Feature'ları İndir — {len(final_selected)} sütun, {len(export_final):,} satır",
             data=buf_final.getvalue(),
             file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_selected_features.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
