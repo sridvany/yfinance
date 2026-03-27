@@ -88,6 +88,78 @@ def calc_supertrend(high, low, close, period=10, multiplier=3.0):
     return supertrend
 
 # ============================================================
+# YENİ İNDİKATÖR FONKSİYONLARI
+# ============================================================
+
+def calc_roc(close, period=10):
+    """Rate of Change — fiyat değişim hızı (%)"""
+    return ((close - close.shift(period)) / close.shift(period)) * 100
+
+def calc_stochastic(high, low, close, k_period=14, d_period=3):
+    """Stochastic Oscillator %K ve %D"""
+    lowest_low   = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+    stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+    stoch_d = stoch_k.rolling(window=d_period).mean()
+    return stoch_k, stoch_d
+
+def calc_adx(high, low, close, period=14):
+    """Average Directional Index — trend gücü"""
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low  - close.shift(1)).abs()
+    ], axis=1).max(axis=1)
+
+    up_move   = high - high.shift(1)
+    down_move = low.shift(1) - low
+
+    plus_dm  = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    plus_dm  = pd.Series(plus_dm,  index=close.index)
+    minus_dm = pd.Series(minus_dm, index=close.index)
+
+    atr_s     = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    plus_di   = 100 * plus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr_s
+    minus_di  = 100 * minus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr_s
+
+    dx  = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    adx = dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    return adx
+
+def calc_williams_r(high, low, close, period=14):
+    """Williams %R — aşırı alım/satım"""
+    highest_high = high.rolling(window=period).max()
+    lowest_low   = low.rolling(window=period).min()
+    return -100 * (highest_high - close) / (highest_high - lowest_low)
+
+def calc_cci(high, low, close, period=20):
+    """Commodity Channel Index — ortalamadan sapma"""
+    typical_price = (high + low + close) / 3
+    sma_tp  = typical_price.rolling(window=period).mean()
+    mean_dev = typical_price.rolling(window=period).apply(
+        lambda x: np.mean(np.abs(x - np.mean(x))), raw=True
+    )
+    return (typical_price - sma_tp) / (0.015 * mean_dev)
+
+def calc_obv(close, volume):
+    """On Balance Volume — hacim-fiyat uyumu"""
+    direction = np.sign(close.diff()).fillna(0)
+    return (direction * volume).cumsum()
+
+def calc_cmf(high, low, close, volume, period=20):
+    """Chaikin Money Flow — para akışı yönü"""
+    clv = ((close - low) - (high - close)) / (high - low)
+    clv = clv.replace([np.inf, -np.inf], 0).fillna(0)
+    return (clv * volume).rolling(window=period).sum() / volume.rolling(window=period).sum()
+
+def calc_volume_roc(volume, period=10):
+    """Volume Rate of Change — hacim ivmesi (%)"""
+    return ((volume - volume.shift(period)) / volume.shift(period)) * 100
+
+
+# ============================================================
 # Ana Uygulama
 # ============================================================
 
@@ -165,7 +237,9 @@ if symbol:
         st.warning("Seçilen tarih aralığında veri yok.")
         st.stop()
 
-    close = df["Close"]; high = df["High"]; low = df["Low"]
+    close = df["Close"]; high = df["High"]; low = df["Low"]; volume = df["Volume"]
+
+    # Mevcut indikatörler
     df["EMA_20"]     = calc_ema(close, 20)
     df["EMA_50"]     = calc_ema(close, 50)
     df["EMA_200"]    = calc_ema(close, 200)
@@ -175,6 +249,16 @@ if symbol:
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
     df["Return"]     = np.log(close).diff()
+
+    # Yeni indikatörler
+    df["ROC"]        = calc_roc(close)
+    df["Stoch_K"], df["Stoch_D"] = calc_stochastic(high, low, close)
+    df["ADX"]        = calc_adx(high, low, close)
+    df["Williams_R"] = calc_williams_r(high, low, close)
+    df["CCI"]        = calc_cci(high, low, close)
+    df["OBV"]        = calc_obv(close, volume)
+    df["CMF"]        = calc_cmf(high, low, close, volume)
+    df["Volume_ROC"] = calc_volume_roc(volume)
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -276,7 +360,9 @@ if symbol:
     removed_cnt = len(df) - len(df_clean)
 
     if not df_clean.empty:
-        _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]
+        _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]; _v = df_clean["Volume"]
+
+        # Mevcut indikatörler
         df_clean["EMA_20"]     = calc_ema(_c, 20)
         df_clean["EMA_50"]     = calc_ema(_c, 50)
         df_clean["EMA_200"]    = calc_ema(_c, 200)
@@ -286,6 +372,16 @@ if symbol:
         df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
         df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
         df_clean["Return"]     = np.log(_c).diff()
+
+        # Yeni indikatörler
+        df_clean["ROC"]        = calc_roc(_c)
+        df_clean["Stoch_K"], df_clean["Stoch_D"] = calc_stochastic(_h, _l, _c)
+        df_clean["ADX"]        = calc_adx(_h, _l, _c)
+        df_clean["Williams_R"] = calc_williams_r(_h, _l, _c)
+        df_clean["CCI"]        = calc_cci(_h, _l, _c)
+        df_clean["OBV"]        = calc_obv(_c, _v)
+        df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
+        df_clean["Volume_ROC"] = calc_volume_roc(_v)
 
         clean_selected = [c for c in selected_cols if c in df_clean.columns]
         export_clean   = df_clean[clean_selected].copy()
@@ -444,7 +540,7 @@ if symbol:
                         return f"background-color: {hex_c}; color: {text}; font-weight: bold"
 
                     st.dataframe(
-                        pairs_df.style.applymap(color_rho, subset=["ρ"]),
+                        pairs_df.style.map(color_rho, subset=["ρ"]),
                         use_container_width=True, hide_index=True
                     )
 
@@ -640,7 +736,7 @@ Korelasyon nedensellik anlamına gelmez.
                 return                                "background-color:#d1e7dd; color:#0a3622"
 
             st.dataframe(
-                vif_df.style.applymap(_vif_color, subset=["VIF"]),
+                vif_df.style.map(_vif_color, subset=["VIF"]),
                 use_container_width=True, hide_index=True
             )
             ca, cb = st.columns(2)
@@ -758,7 +854,7 @@ Korelasyon nedensellik anlamına gelmez.
                 return ""
 
             st.dataframe(
-                adf_df.style.applymap(_adf_color, subset=["Durum"]),
+                adf_df.style.map(_adf_color, subset=["Durum"]),
                 use_container_width=True, hide_index=True
             )
 
