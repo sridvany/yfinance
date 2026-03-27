@@ -757,7 +757,7 @@ Korelasyon nedensellik anlamına gelmez.
 
         if st.button("▶ MI Analizini Çalıştır", key="run_mi"):
             after_vif = st.session_state.get("fs_after_vif", all_candidates)
-            sub       = fs_df[after_vif + [target]].dropna()
+            sub       = fs_df[after_vif + [target]].replace([np.inf, -np.inf], np.nan).dropna()
             X_mi      = sub[after_vif].values
             y_mi      = sub[target].values
 
