@@ -307,22 +307,22 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Veri":    ["Open", "High", "Low", "Close", "Volume"],
-        "📈 Trend":       ["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"],
-        "⚡ Momentum":    ["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"],
-        "🌊 Volatilite":  ["ATR", "BB_Upper", "BB_Lower", "BBW"],
-        "📦 Hacim":       ["OBV", "CMF", "MFI", "Volume_ROC"],
-        "💹 Fiyat":       ["Return"],
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Volume"],        "fiyat ve hacim verisinin ham hali"),
+        "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde hareket ettiğini gösterir"),
+        "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer"),
+        "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar oynadığını ölçer"),
+        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir"),
+        "💹 Fiyat":       (["Return"],                                         "logaritmik günlük getiri"),
     }
 
     selected_cols = []
     available_set = set(df.columns)
 
-    for cat_label, cat_cols in CATEGORIES.items():
+    for cat_label, (cat_cols, cat_desc) in CATEGORIES.items():
         existing = [c for c in cat_cols if c in available_set]
         if not existing:
             continue
-        st.markdown(f"**{cat_label}**")
+        st.markdown(f"**{cat_label}** *({cat_desc})*")
         cb_cols = st.columns(4)
         for i, col_name in enumerate(existing):
             with cb_cols[i % 4]:
@@ -330,7 +330,7 @@ if symbol:
                     selected_cols.append(col_name)
 
     # Kategoride olmayan sütunlar varsa "Diğer" altında göster
-    categorized = {c for cols in CATEGORIES.values() for c in cols}
+    categorized = {c for cols, _ in CATEGORIES.values() for c in cols}
     other_cols  = [c for c in df.columns if c not in categorized]
     if other_cols:
         st.markdown("**📎 Diğer**")
