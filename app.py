@@ -314,7 +314,7 @@ if symbol:
     df["ATR"]        = calc_atr(high, low, close)
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
-    df["Return"]     = np.log(close).diff()
+    df["Return"]     = close.pct_change()
 
     # Yeni indikatörler
     df["ROC"]        = calc_roc(close)
@@ -356,13 +356,12 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Fiyatlar":    (["Open", "High", "Low", "Close"],                  "borsadan gelen ham fiyat verisi"),
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini ve trendin ne kadar güçlü olduğunu gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer, aşırı alım/satım bölgelerini gösterir"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert ve geniş hareket ettiğini ölçer"),
         "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü, gücünü ve para akışını gösterir"),
         "💧 Likidite":    (["Volume", "Amihud", "MEC", "CS_Spread", "Daily_Range"], "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
-        "💹 Fiyat":       (["Return"],                                         "bir önceki güne göre logaritmik günlük getiri"),
     }
 
     selected_cols = []
@@ -468,7 +467,7 @@ if symbol:
         df_clean["ATR"]        = calc_atr(_h, _l, _c)
         df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
         df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
-        df_clean["Return"]     = np.log(_c).diff()
+        df_clean["Return"]     = _c.pct_change()
 
         # Yeni indikatörler
         df_clean["ROC"]        = calc_roc(_c)
