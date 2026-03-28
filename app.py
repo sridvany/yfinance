@@ -356,12 +356,12 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Volume"],        "fiyat ve hacim verisinin ham hali"),
-        "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde hareket ettiğini gösterir"),
-        "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer"),
-        "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar oynadığını ölçer"),
-        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir"),
-        "💧 Likidite":    (["Amihud", "MEC", "CS_Spread", "Daily_Range"],     "piyasa likiditesini ve etkinliğini ölçer"),
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Volume"],        "ham fiyat ve hacim verisi (OHLCV)"),
+        "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini gösterir (EMA, MACD, ADX)"),
+        "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer (RSI, ROC, Stoch)"),
+        "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert hareket ettiğini ölçer (ATR, Bollinger)"),
+        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir (OBV, CMF)"),
+        "💧 Likidite":    (["Amihud", "MEC", "CS_Spread", "Daily_Range"],     "piyasanın derinliğini ve etkinliğini ölçer (Amihud, MEC, CS)"),
         "💹 Fiyat":       (["Return"],                                         "logaritmik günlük getiri"),
     }
 
