@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indirici")
-st.caption("Varlık sembolünü bilmiyorsanız Gemini'ye 'yfinance ...... tickerı nedir' yazın.")
+st.caption("Garbage In, Garbage Out")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
