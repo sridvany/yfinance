@@ -174,18 +174,18 @@ def calc_amihud(close, volume):
     ret   = np.log(close).diff().abs()
     return ret / volume.replace(0, np.nan)
 
-def calc_mec(close, short=5, long=30, window=60):
-    """Market Efficiency Coefficient — kısa/uzun dönem varyans oranı
-    MEC = T × Var(ln(Ct/Ct-short)) / Var(ln(Ct/Ct-long))
-    T = long / short = 6
-    MEC ≈ 1 veya < 1 → piyasa dayanıklı (resilient)
+def calc_mec(close, window=63):
+    """Market Efficiency Coefficient
+    MEC = Var(haftalık getiri) / (T × Var(günlük getiri))
+    T = 5, pencere = 3 ay (~63 işlem günü)
+    MEC ≈ 1 → piyasa verimli/dayanıklı
     """
-    T            = long / short
-    ret_short    = np.log(close / close.shift(short))
-    ret_long     = np.log(close / close.shift(long))
-    var_short    = ret_short.rolling(window=window).var()
-    var_long     = ret_long.rolling(window=window).var()
-    return T * var_short / var_long
+    T          = 5
+    ret_daily  = np.log(close / close.shift(1))
+    ret_weekly = np.log(close / close.shift(5))
+    var_daily  = ret_daily.rolling(window=window).var()
+    var_weekly = ret_weekly.rolling(window=window).var()
+    return var_weekly / (T * var_daily)
 
 def calc_corwin_schultz(high, low):
     """Corwin-Schultz Bid-Ask Spread Tahmini
@@ -356,12 +356,20 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Fiyatlar ve Return":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
+        "📊 Ham Fiyat ve Return":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini ve trendin ne kadar güçlü olduğunu gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer, aşırı alım/satım bölgelerini gösterir"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert ve geniş hareket ettiğini ölçer"),
         "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü, gücünü ve para akışını gösterir"),
         "💧 Likidite":    (["Volume", "Amihud", "MEC", "CS_Spread", "Daily_Range"], "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
+    }
+
+    LIQUIDITY_DIMS = {
+        "CS_Spread":   "Sıkılık",
+        "Daily_Range": "Anlıklık",
+        "Volume":      "Derinlik",
+        "Amihud":      "Genişlik",
+        "MEC":         "Esneklik",
     }
 
     selected_cols = []
@@ -375,7 +383,9 @@ if symbol:
         cb_cols = st.columns(4)
         for i, col_name in enumerate(existing):
             with cb_cols[i % 4]:
-                if st.checkbox(col_name, value=True, key=f"cb_{col_name}"):
+                dim   = LIQUIDITY_DIMS.get(col_name)
+                label = f"{col_name} — {dim}" if dim else col_name
+                if st.checkbox(label, value=True, key=f"cb_{col_name}"):
                     selected_cols.append(col_name)
 
     # Kategoride olmayan sütunlar varsa "Diğer" altında göster
