@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indirici")
-st.caption("Garbage In, Garbage Out...")
+st.caption("Varlık sembolünü bilmiyorsanız Gemini'ye 'yfinance ...... tickerı nedir' yazın.")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
@@ -169,6 +169,11 @@ def calc_mfi(high, low, close, volume, period=14):
     neg_sum        = neg_mf.rolling(window=period).sum()
     return 100 - (100 / (1 + pos_sum / neg_sum))
 
+def calc_amihud(close, volume):
+    """Amihud İllikiditesi — |Return| / Volume, ham günlük değer"""
+    ret   = np.log(close).diff().abs()
+    return ret / volume.replace(0, np.nan)
+
 def calc_stoch_rsi(close, rsi_period=14, stoch_period=14, k_smooth=3, d_smooth=3):
     """Stochastic RSI — RSI'ya Stochastic formülü uygulanır"""
     rsi        = calc_rsi(close, rsi_period)
@@ -282,6 +287,7 @@ if symbol:
     df["Volume_ROC"] = calc_volume_roc(volume)
     df["MFI"]          = calc_mfi(high, low, close, volume)
     df["StochRSI_K"], df["StochRSI_D"] = calc_stoch_rsi(close)
+    df["Amihud"]     = calc_amihud(close, volume)
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -311,7 +317,7 @@ if symbol:
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde hareket ettiğini gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar oynadığını ölçer"),
-        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir"),
+        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC", "Amihud"],      "alım-satım hacminin yönünü, gücünü ve likiditesini gösterir"),
         "💹 Fiyat":       (["Return"],                                         "logaritmik günlük getiri"),
     }
 
@@ -431,6 +437,7 @@ if symbol:
         df_clean["Volume_ROC"] = calc_volume_roc(_v)
         df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
         df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
+        df_clean["Amihud"]     = calc_amihud(_c, _v)
 
         clean_selected = [c for c in selected_cols if c in df_clean.columns]
         export_clean   = df_clean[clean_selected].copy()
