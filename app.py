@@ -356,12 +356,12 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Volume"],        "borsadan gelen ham fiyat ve hacim verisi"),
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close"],                  "borsadan gelen ham fiyat ve hacim verisi"),
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini ve trendin ne kadar güçlü olduğunu gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer, aşırı alım/satım bölgelerini gösterir"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert ve geniş hareket ettiğini ölçer"),
         "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü, gücünü ve para akışını gösterir"),
-        "💧 Likidite":    (["Amihud", "MEC", "CS_Spread", "Daily_Range"],     "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
+        "💧 Likidite":    (["Volume", "Amihud", "MEC", "CS_Spread", "Daily_Range"], "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
         "💹 Fiyat":       (["Return"],                                         "bir önceki güne göre logaritmik günlük getiri"),
     }
 
