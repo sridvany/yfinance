@@ -1048,7 +1048,7 @@ Korelasyon nedensellik anlamına gelmez.
             dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
 
         if "CMF" in dl_df.columns:
-            dl_df["CMF"] = dl_df["CMF"].replace(-1, np.nan).ffill()
+            dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
 
         if "CS_Spread" in dl_df.columns:
             dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
