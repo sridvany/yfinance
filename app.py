@@ -317,7 +317,8 @@ if symbol:
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde hareket ettiğini gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar oynadığını ölçer"),
-        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC", "Amihud"],      "alım-satım hacminin yönünü, gücünü ve likiditesini gösterir"),
+        "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir"),
+        "💧 Likidite":    (["Amihud"],                                         "piyasa likiditesini ölçer — düşük değer daha likit"),
         "💹 Fiyat":       (["Return"],                                         "logaritmik günlük getiri"),
     }
 
