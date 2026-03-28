@@ -356,7 +356,7 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Fiyat ve Return":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini ve trendin ne kadar güçlü olduğunu gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer, aşırı alım/satım bölgelerini gösterir"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert ve geniş hareket ettiğini ölçer"),
@@ -1022,6 +1022,52 @@ Korelasyon nedensellik anlamına gelmez.
             label=f"📥 Seçili Feature'ları İndir — {len(final_selected)} sütun, {len(export_final):,} satır",
             data=buf_final.getvalue(),
             file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_selected_features.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
+        st.markdown("---")
+        st.markdown("### 🤖 Derin Öğrenmeye Hazır Veri Seti")
+        st.caption("Seçili feature'lara dönüşümler uygulanır ve temizlenmiş veri seti hazırlanır.")
+
+        dl_df = fs_df[final_selected].copy()
+        epsilon = 1e-10
+
+        if "OBV" in dl_df.columns:
+            obv_diff = dl_df["OBV"].diff()
+            dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
+
+        if "Amihud" in dl_df.columns:
+            dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
+            dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
+
+        if "Volume" in dl_df.columns:
+            dl_df["Volume"] = np.log1p(dl_df["Volume"])
+
+        if "Volume_ROC" in dl_df.columns:
+            dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
+
+        if "CMF" in dl_df.columns:
+            dl_df["CMF"] = dl_df["CMF"].replace(-1, np.nan).ffill()
+
+        if "CS_Spread" in dl_df.columns:
+            dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
+
+        dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
+
+        export_dl = dl_df.copy()
+        export_dl.index.name = date_col_name
+        export_dl = export_dl.reset_index()
+
+        buf_dl = BytesIO()
+        with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
+            export_dl.to_excel(writer, index=False, sheet_name="Data")
+        buf_dl.seek(0)
+
+        st.download_button(
+            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+            data=buf_dl.getvalue(),
+            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
