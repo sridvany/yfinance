@@ -174,6 +174,46 @@ def calc_amihud(close, volume):
     ret   = np.log(close).diff().abs()
     return ret / volume.replace(0, np.nan)
 
+def calc_mec(close, short=5, long=30, window=60):
+    """Market Efficiency Coefficient — kısa/uzun dönem varyans oranı
+    MEC = T × Var(ln(Ct/Ct-short)) / Var(ln(Ct/Ct-long))
+    T = long / short = 6
+    MEC ≈ 1 veya < 1 → piyasa dayanıklı (resilient)
+    """
+    T            = long / short
+    ret_short    = np.log(close / close.shift(short))
+    ret_long     = np.log(close / close.shift(long))
+    var_short    = ret_short.rolling(window=window).var()
+    var_long     = ret_long.rolling(window=window).var()
+    return T * var_short / var_long
+
+def calc_corwin_schultz(high, low):
+    """Corwin-Schultz Bid-Ask Spread Tahmini
+    β = Σ [ln(H_t+j / L_t+j)]² (j=0,1)
+    γ = [ln(H_t,t+1 / L_t,t+1)]²
+    α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
+    S = 2(e^α - 1) / (1 + e^α)
+    Negatif α → 0
+    """
+    sqrt2   = np.sqrt(2)
+    denom   = 3 - 2 * sqrt2
+
+    log_hl       = np.log(high / low)
+    log_hl2      = log_hl ** 2
+    log_hl_next  = np.log(high.shift(-1) / low.shift(-1)) ** 2
+
+    beta  = log_hl2 + log_hl_next
+
+    h2    = pd.concat([high, high.shift(-1)], axis=1).max(axis=1)
+    l2    = pd.concat([low,  low.shift(-1)],  axis=1).min(axis=1)
+    gamma = np.log(h2 / l2) ** 2
+
+    alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / denom - np.sqrt(gamma / denom)
+    alpha = alpha.clip(lower=0)
+
+    spread = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
+    return spread
+
 def calc_stoch_rsi(close, rsi_period=14, stoch_period=14, k_smooth=3, d_smooth=3):
     """Stochastic RSI — RSI'ya Stochastic formülü uygulanır"""
     rsi        = calc_rsi(close, rsi_period)
@@ -288,6 +328,9 @@ if symbol:
     df["MFI"]          = calc_mfi(high, low, close, volume)
     df["StochRSI_K"], df["StochRSI_D"] = calc_stoch_rsi(close)
     df["Amihud"]     = calc_amihud(close, volume)
+    df["MEC"]        = calc_mec(close)
+    df["CS_Spread"]      = calc_corwin_schultz(high, low)
+    df["Daily_Range"]    = high - low
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -318,7 +361,7 @@ if symbol:
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar oynadığını ölçer"),
         "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü ve gücünü gösterir"),
-        "💧 Likidite":    (["Amihud"],                                         "piyasa likiditesini ölçer — düşük değer daha likit"),
+        "💧 Likidite":    (["Amihud", "MEC", "CS_Spread", "Daily_Range"],     "piyasa likiditesini ve etkinliğini ölçer"),
         "💹 Fiyat":       (["Return"],                                         "logaritmik günlük getiri"),
     }
 
@@ -439,6 +482,9 @@ if symbol:
         df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
         df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
         df_clean["Amihud"]     = calc_amihud(_c, _v)
+        df_clean["MEC"]        = calc_mec(_c)
+        df_clean["CS_Spread"]      = calc_corwin_schultz(_h, _l)
+        df_clean["Daily_Range"]    = _h - _l
 
         clean_selected = [c for c in selected_cols if c in df_clean.columns]
         export_clean   = df_clean[clean_selected].copy()
