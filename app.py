@@ -304,15 +304,39 @@ if symbol:
     # ============================================================
 
     st.subheader("Veri Seçimi")
-    available_cols = list(df.columns)
     st.caption("İndirmek istediğiniz verileri seçin:")
+
+    CATEGORIES = {
+        "📊 Ham Veri":    ["Open", "High", "Low", "Close", "Volume"],
+        "📈 Trend":       ["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"],
+        "⚡ Momentum":    ["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"],
+        "🌊 Volatilite":  ["ATR", "BB_Upper", "BB_Lower", "BBW"],
+        "📦 Hacim":       ["OBV", "CMF", "MFI", "Volume_ROC"],
+        "💹 Fiyat":       ["Return"],
+    }
+
     selected_cols = []
-    cols_per_row  = 4
-    rows = [available_cols[i:i+cols_per_row] for i in range(0, len(available_cols), cols_per_row)]
-    for row in rows:
-        checkbox_cols = st.columns(len(row))
-        for i, col_name in enumerate(row):
-            with checkbox_cols[i]:
+    available_set = set(df.columns)
+
+    for cat_label, cat_cols in CATEGORIES.items():
+        existing = [c for c in cat_cols if c in available_set]
+        if not existing:
+            continue
+        st.markdown(f"**{cat_label}**")
+        cb_cols = st.columns(4)
+        for i, col_name in enumerate(existing):
+            with cb_cols[i % 4]:
+                if st.checkbox(col_name, value=True, key=f"cb_{col_name}"):
+                    selected_cols.append(col_name)
+
+    # Kategoride olmayan sütunlar varsa "Diğer" altında göster
+    categorized = {c for cols in CATEGORIES.values() for c in cols}
+    other_cols  = [c for c in df.columns if c not in categorized]
+    if other_cols:
+        st.markdown("**📎 Diğer**")
+        cb_cols = st.columns(4)
+        for i, col_name in enumerate(other_cols):
+            with cb_cols[i % 4]:
                 if st.checkbox(col_name, value=True, key=f"cb_{col_name}"):
                     selected_cols.append(col_name)
 
