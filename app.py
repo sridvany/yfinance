@@ -169,6 +169,16 @@ def calc_mfi(high, low, close, volume, period=14):
     neg_sum        = neg_mf.rolling(window=period).sum()
     return 100 - (100 / (1 + pos_sum / neg_sum))
 
+def calc_stoch_rsi(close, rsi_period=14, stoch_period=14, k_smooth=3, d_smooth=3):
+    """Stochastic RSI — RSI'ya Stochastic formülü uygulanır"""
+    rsi        = calc_rsi(close, rsi_period)
+    min_rsi    = rsi.rolling(window=stoch_period).min()
+    max_rsi    = rsi.rolling(window=stoch_period).max()
+    stoch_rsi  = (rsi - min_rsi) / (max_rsi - min_rsi)
+    stoch_rsi_k = stoch_rsi.rolling(window=k_smooth).mean() * 100
+    stoch_rsi_d = stoch_rsi_k.rolling(window=d_smooth).mean()
+    return stoch_rsi_k, stoch_rsi_d
+
 
 # ============================================================
 # Ana Uygulama
@@ -270,7 +280,8 @@ if symbol:
     df["OBV"]        = calc_obv(close, volume)
     df["CMF"]        = calc_cmf(high, low, close, volume)
     df["Volume_ROC"] = calc_volume_roc(volume)
-    df["MFI"]        = calc_mfi(high, low, close, volume)
+    df["MFI"]          = calc_mfi(high, low, close, volume)
+    df["StochRSI_K"], df["StochRSI_D"] = calc_stoch_rsi(close)
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -394,7 +405,8 @@ if symbol:
         df_clean["OBV"]        = calc_obv(_c, _v)
         df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
         df_clean["Volume_ROC"] = calc_volume_roc(_v)
-        df_clean["MFI"]        = calc_mfi(_h, _l, _c, _v)
+        df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
+        df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
 
         clean_selected = [c for c in selected_cols if c in df_clean.columns]
         export_clean   = df_clean[clean_selected].copy()
