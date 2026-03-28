@@ -533,6 +533,48 @@ if symbol:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+        # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
+        dl_df   = df_clean2[clean_selected].copy()
+        epsilon = 1e-10
+
+        if "OBV" in dl_df.columns:
+            obv_diff = dl_df["OBV"].diff()
+            dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
+
+        if "Amihud" in dl_df.columns:
+            dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
+            dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
+
+        if "Volume" in dl_df.columns:
+            dl_df["Volume"] = np.log1p(dl_df["Volume"])
+
+        if "Volume_ROC" in dl_df.columns:
+            dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
+
+        if "CMF" in dl_df.columns:
+            dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
+
+        if "CS_Spread" in dl_df.columns:
+            dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
+
+        dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
+
+        export_dl = dl_df.copy()
+        export_dl.index.name = "Datetime" if is_intraday else "Date"
+        export_dl = export_dl.reset_index()
+
+        buf_dl = BytesIO()
+        with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
+            export_dl.to_excel(writer, index=False, sheet_name="Data")
+        buf_dl.seek(0)
+
+        st.download_button(
+            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+            data=buf_dl.getvalue(),
+            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
         # ============================================================
         # SPEARMAN KORELASYON ANALİZİ
         # ============================================================
@@ -544,7 +586,7 @@ if symbol:
             "Parametrik olmayan bu yöntem, lineer olmayan ilişkileri de yakalar."
         )
 
-        numeric_cols = [c for c in selected_cols if pd.api.types.is_numeric_dtype(df[c])]
+        numeric_cols = [c for c in dl_df.columns if pd.api.types.is_numeric_dtype(dl_df[c])]
 
         if len(numeric_cols) < 2:
             st.info("Spearman analizi için en az 2 sayısal sütun seçmelisiniz.")
@@ -557,7 +599,7 @@ if symbol:
             )
 
             if st.button("Spearman Korelasyonunu Hesapla"):
-                sub = df[numeric_cols].dropna()
+                sub = dl_df[numeric_cols].dropna()
                 n   = len(sub)
 
                 rho_mat = pd.DataFrame(np.nan, index=numeric_cols, columns=numeric_cols)
@@ -705,12 +747,12 @@ Korelasyon nedensellik anlamına gelmez.
         st.divider()
         st.subheader("🔬 Feature Seçim Analizi")
         st.caption(
-            "Fully cleaned veri üzerinde sırasıyla 4 analiz uygulanır. "
+            "Derin öğrenmeye hazır veri üzerinde sırasıyla 4 analiz uygulanır. "
             "Her adımda çıkarılması önerilen değişkenler listelenir. "
             "Adımlar zincir şeklinde: her adım öncekinden hayatta kalanlar üzerinde çalışır."
         )
 
-        fs_df         = df_clean2.copy()
+        fs_df         = dl_df.copy()
         target        = "Close"
         date_col_name = "Datetime" if is_intraday else "Date"
 
@@ -1019,55 +1061,9 @@ Korelasyon nedensellik anlamına gelmez.
         buf_final.seek(0)
 
         st.download_button(
-            label=f"📥 Seçili Feature'ları İndir — {len(final_selected)} sütun, {len(export_final):,} satır",
+            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
             data=buf_final.getvalue(),
-            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_selected_features.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-        # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
-        st.markdown("---")
-        st.markdown("### 🤖 Derin Öğrenmeye Hazır Veri Seti")
-        st.caption("Seçili feature'lara dönüşümler uygulanır ve temizlenmiş veri seti hazırlanır.")
-
-        dl_df = fs_df[final_selected].copy()
-        epsilon = 1e-10
-
-        if "OBV" in dl_df.columns:
-            obv_diff = dl_df["OBV"].diff()
-            dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
-
-        if "Amihud" in dl_df.columns:
-            dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
-            dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
-
-        if "Volume" in dl_df.columns:
-            dl_df["Volume"] = np.log1p(dl_df["Volume"])
-
-        if "Volume_ROC" in dl_df.columns:
-            dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
-
-        if "CMF" in dl_df.columns:
-            dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
-
-        if "CS_Spread" in dl_df.columns:
-            dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
-
-        dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
-
-        export_dl = dl_df.copy()
-        export_dl.index.name = date_col_name
-        export_dl = export_dl.reset_index()
-
-        buf_dl = BytesIO()
-        with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
-            export_dl.to_excel(writer, index=False, sheet_name="Data")
-        buf_dl.seek(0)
-
-        st.download_button(
-            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
-            data=buf_dl.getvalue(),
-            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready.xlsx",
+            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready_selected.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
