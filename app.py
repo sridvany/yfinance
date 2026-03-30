@@ -571,9 +571,25 @@ if symbol:
         st.download_button(
             label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
             data=buf_dl.getvalue(),
-            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready.xlsx",
+            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_veri_seti.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+        with st.expander("📋 Dönüşüm Adımları — Hangi Değişkene Ne Yapıldı?"):
+            st.markdown("""
+| Değişken | Uygulanan Dönüşüm | Gerekçe |
+|---|---|---|
+| **OBV** | `diff()` → `log1p(abs) × sign` | Kümülatif serinin farkı alınır; büyük değerler log ile sıkıştırılır, yön korunur |
+| **Amihud** | `replace(0, ε=1e-10)` → `log1p(x × 1e9)` | 1e-8 mertebesindeki çok küçük sayılar pozitif bölgeye taşınır, log1p ile ölçeklenir |
+| **Volume** | `log1p(x)` | Hacim dağılımı sağa çarpık; log dönüşümü ölçeği dengeler |
+| **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
+| **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
+| **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
+| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
+| **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
+
+> **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
+            """)
 
         # ============================================================
         # SPEARMAN KORELASYON ANALİZİ
