@@ -575,7 +575,7 @@ if symbol:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        with st.expander("📋 Dönüşüm Adımları — Hangi Değişkene Ne Yapıldı?"):
+        with st.expander("📋 Temizleme ve Transforme İşlemleri"):
             st.markdown("""
 | Değişken | Uygulanan Dönüşüm | Gerekçe |
 |---|---|---|
