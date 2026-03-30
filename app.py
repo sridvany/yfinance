@@ -568,7 +568,7 @@ if symbol:
         buf_dl.seek(0)
 
         st.download_button(
-            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+            label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
             data=buf_dl.getvalue(),
             file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -997,9 +997,9 @@ Korelasyon nedensellik anlamına gelmez.
                 buf_final.seek(0)
 
                 st.download_button(
-                    label=f"📥 Derin Öğrenmeye Hazır Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
+                    label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
                     data=buf_final.getvalue(),
-                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready_selected.xlsx",
+                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis_secili.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
