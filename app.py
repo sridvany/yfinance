@@ -13,7 +13,6 @@ from scipy import stats
 import plotly.graph_objects as go
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tsa.stattools import adfuller
-from sklearn.feature_selection import mutual_info_regression
 
 st.set_page_config(page_title="yfinance veri indirici", layout="centered")
 
@@ -26,7 +25,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indirici")
-st.caption("ne ekersen onu biçersin...")
+st.caption("garbage in, garbage out...")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
@@ -569,13 +568,13 @@ if symbol:
         buf_dl.seek(0)
 
         st.download_button(
-            label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
             data=buf_dl.getvalue(),
             file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_veri_seti.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        with st.expander("📋 Temizleme ve Transforme İşlemleri"):
+        with st.expander("📋 Dönüşüm Adımları — Hangi Değişkene Ne Yapıldı?"):
             st.markdown("""
 | Değişken | Uygulanan Dönüşüm | Gerekçe |
 |---|---|---|
@@ -585,7 +584,7 @@ if symbol:
 | **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
 | **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
 | **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
-| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; Derin öğrenme yapılacaksa MinMax scaling öncesi ek işlem gerektirmez |
+| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
 | **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
 
 > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
@@ -763,325 +762,246 @@ Korelasyon nedensellik anlamına gelmez.
         st.divider()
         st.subheader("🔬 Feature Seçim Analizi")
         st.caption(
-            "Derin öğrenmeye hazır veri üzerinde sırasıyla 4 analiz uygulanır. "
-            "Her adımda çıkarılması önerilen değişkenler listelenir. "
-            "Adımlar zincir şeklinde: her adım öncekinden hayatta kalanlar üzerinde çalışır."
+            "Seçilen veri setleri üzerinde Korelasyon → VIF → ADF analizleri çalıştırılır. "
+            "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
         )
 
-        fs_df         = dl_df.copy()
         target        = "Close"
         date_col_name = "Datetime" if is_intraday else "Date"
 
-        all_candidates = [
-            c for c in fs_df.columns
-            if pd.api.types.is_numeric_dtype(fs_df[c]) and c != target
-        ]
+        DATASETS = {
+            "1 — Ham Veri":              df[[c for c in clean_selected if c in df.columns]].dropna(),
+            "2 — OHLC Temizlenmiş":      df_clean[clean_selected].dropna(),
+            "3 — Tam Temizlenmiş":       df_clean2[clean_selected],
+            "4 — Derin Öğrenmeye Hazır": dl_df,
+        }
 
-        fs_key = f"{symbol}_{start_date}_{end_date}"
-        if st.session_state.get("fs_key") != fs_key:
-            for k_ in [
-                "fs_after_corr", "fs_corr_remove", "fs_corr_low", "fs_corr_high", "fs_corr_table",
-                "fs_after_vif", "fs_vif_df", "fs_vif_remove",
-                "fs_after_mi", "fs_mi_df", "fs_mi_remove", "fs_mi_thr",
-                "fs_adf_df", "fs_non_stationary",
-                "fs_s1", "fs_s2", "fs_s3", "fs_s4",
-            ]:
-                st.session_state.pop(k_, None)
-            st.session_state["fs_key"]        = fs_key
-            st.session_state["fs_after_corr"] = all_candidates.copy()
-            st.session_state["fs_after_vif"]  = all_candidates.copy()
-            st.session_state["fs_after_mi"]   = all_candidates.copy()
-
-        st.markdown(
-            f"**Başlangıç feature seti ({len(all_candidates)}):** "
-            f"`{'`, `'.join(all_candidates)}`"
+        dataset_options   = list(DATASETS.keys())
+        selected_datasets = st.multiselect(
+            "Analiz edilecek veri setlerini seçin:",
+            dataset_options,
+            default=dataset_options,
+            key="fs_ds_select",
         )
 
-        # ── ADIM 1: KORELASYON ──────────────────────────────────
-        st.markdown("---")
-        st.markdown("### 1️⃣ Korelasyon Filtresi")
+        if not selected_datasets:
+            st.info("En az bir veri seti seçin.")
+        else:
+            col_p1, col_p2, col_p3 = st.columns(3)
+            with col_p1:
+                corr_low_thr  = st.slider("Düşük |r| eşiği — altı çıkar",  0.05, 0.30,  0.15, 0.01,   key="fs_corr_low")
+            with col_p2:
+                corr_high_thr = st.slider("Yüksek |r| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
+            with col_p3:
+                vif_thr       = st.slider("VIF eşiği — üstü çıkar",         5.0, 20.0,  10.0, 0.5,    key="fs_vif_thr")
 
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            corr_low_thr = st.slider(
-                "Düşük eşik — |r| < bu değer → çıkar",
-                0.05, 0.30, 0.15, 0.01, key="corr_low_thr"
-            )
-        with col_c2:
-            corr_high_thr = st.slider(
-                "Yüksek eşik — |r| > bu değer → multicollinearity riski",
-                0.900, 0.999, 0.995, 0.001, format="%.3f", key="corr_high_thr"
-            )
+            if st.button("▶ Tümünü Çalıştır", key="fs_run_all"):
+                fs_results = {}
+                for ds_name in selected_datasets:
+                    ds = DATASETS[ds_name].copy()
+                    if target not in ds.columns:
+                        continue
+                    candidates = [
+                        c for c in ds.columns
+                        if pd.api.types.is_numeric_dtype(ds[c]) and c != target
+                    ]
+                    sub = ds[candidates + [target]].dropna()
 
-        if st.button("▶ Korelasyon Analizini Çalıştır", key="run_corr"):
-            sub       = fs_df[all_candidates + [target]].dropna()
-            corr_vals = sub[all_candidates].corrwith(sub[target]).abs()
-            low_list  = corr_vals[corr_vals < corr_low_thr].index.tolist()
+                    # ── KORELASYON ──────────────────────────────
+                    corr_vals = sub[candidates].corrwith(sub[target]).abs()
+                    low_list  = corr_vals[corr_vals < corr_low_thr].index.tolist()
+                    fm        = sub[candidates].corr().abs()
+                    upper     = fm.where(np.triu(np.ones(fm.shape), k=1).astype(bool))
+                    high_list = []
+                    for col in upper.columns:
+                        partners = upper.index[upper[col] > corr_high_thr].tolist()
+                        for p in partners:
+                            drop = p if corr_vals.get(p, 0) <= corr_vals.get(col, 0) else col
+                            if drop not in high_list and drop not in low_list:
+                                high_list.append(drop)
+                    corr_remove = list(set(low_list + high_list))
+                    after_corr  = [f for f in candidates if f not in corr_remove]
+                    corr_tbl    = corr_vals.reset_index()
+                    corr_tbl.columns = ["Feature", "|r| ile Close"]
+                    corr_tbl = corr_tbl.sort_values("|r| ile Close", ascending=False)
 
-            fm    = sub[all_candidates].corr().abs()
-            upper = fm.where(np.triu(np.ones(fm.shape), k=1).astype(bool))
-            high_list = []
-            for col in upper.columns:
-                partners = upper.index[upper[col] > corr_high_thr].tolist()
-                for p in partners:
-                    drop = p if corr_vals.get(p, 0) <= corr_vals.get(col, 0) else col
-                    if drop not in high_list and drop not in low_list:
-                        high_list.append(drop)
+                    # ── VIF ─────────────────────────────────────
+                    sub_vif  = sub[after_corr].dropna()
+                    X        = sub_vif.values.astype(float)
+                    vif_rows = []
+                    for i, col in enumerate(after_corr):
+                        try:
+                            v = variance_inflation_factor(X, i)
+                        except Exception:
+                            v = np.nan
+                        vif_rows.append({"Feature": col, "VIF": round(v, 2)})
+                    vif_df    = pd.DataFrame(vif_rows).sort_values("VIF", ascending=False)
+                    vif_rem   = vif_df[vif_df["VIF"] > vif_thr]["Feature"].tolist()
+                    after_vif = [f for f in after_corr if f not in vif_rem]
 
-            remove  = list(set(low_list + high_list))
-            survive = [f for f in all_candidates if f not in remove]
+                    # ── ADF ─────────────────────────────────────
+                    adf_rows = []
+                    for col in after_vif + [target]:
+                        series = ds[col].dropna()
+                        try:
+                            stat, pval, _, _, crit, _ = adfuller(series, autolag="AIC")
+                            stationary = pval < 0.05
+                            adf_rows.append({
+                                "Feature":         col,
+                                "ADF İstatistiği": round(stat, 4),
+                                "p-değeri":        round(pval, 4),
+                                "Kritik (%5)":     round(crit["5%"], 4),
+                                "Durum":           "✅ Durağan" if stationary else "❌ Durağan Değil",
+                            })
+                        except Exception:
+                            adf_rows.append({
+                                "Feature": col, "ADF İstatistiği": np.nan,
+                                "p-değeri": np.nan, "Kritik (%5)": np.nan, "Durum": "⚠️ Hata",
+                            })
+                    adf_df   = pd.DataFrame(adf_rows)
+                    non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
 
-            tbl = corr_vals.reset_index()
-            tbl.columns = ["Feature", "|r| ile Close"]
-            tbl = tbl.sort_values("|r| ile Close", ascending=False)
+                    fs_results[ds_name] = {
+                        "n":           len(sub),
+                        "candidates":  candidates,
+                        "corr_tbl":    corr_tbl,
+                        "corr_low":    low_list,
+                        "corr_high":   high_list,
+                        "after_corr":  after_corr,
+                        "vif_df":      vif_df,
+                        "vif_rem":     vif_rem,
+                        "after_vif":   after_vif,
+                        "adf_df":      adf_df,
+                        "non_stat":    non_stat,
+                    }
 
-            st.session_state.update({
-                "fs_corr_table":  tbl,
-                "fs_corr_low":    low_list,
-                "fs_corr_high":   high_list,
-                "fs_corr_remove": remove,
-                "fs_after_corr":  survive,
-                "fs_s1": True,
-            })
+                st.session_state["fs_results"]      = fs_results
+                st.session_state["fs_vif_thr_used"] = vif_thr
 
-        if st.session_state.get("fs_s1"):
-            st.dataframe(
-                st.session_state["fs_corr_table"].style.format({"|r| ile Close": "{:.4f}"}),
-                use_container_width=True, hide_index=True
-            )
-            low_r   = st.session_state["fs_corr_low"]
-            high_r  = st.session_state["fs_corr_high"]
-            survive = st.session_state["fs_after_corr"]
-            ca, cb  = st.columns(2)
-            with ca:
-                st.error(f"**Düşük |r| → çıkar:** {low_r if low_r else 'Yok'}")
-                st.warning(f"**Multicollinearity → çıkar:** {high_r if high_r else 'Yok'}")
-            with cb:
-                st.success(f"**Kalan ({len(survive)}):** {survive}")
+            # ── SONUÇLAR ────────────────────────────────────────
+            if "fs_results" in st.session_state:
+                fs_results = st.session_state["fs_results"]
+                _vif_thr   = st.session_state.get("fs_vif_thr_used", 10.0)
 
-        # ── ADIM 2: VIF ─────────────────────────────────────────
-        st.markdown("---")
-        st.markdown("### 2️⃣ VIF Analizi")
-        st.caption("Korelasyon adımından hayatta kalanlar üzerinde çalışır.")
+                for ds_name, res in fs_results.items():
+                    with st.expander(f"📊 {ds_name}  —  n={res['n']:,}", expanded=False):
 
-        vif_thr = st.slider(
-            "VIF eşiği — bu değerin üzerindekiler çıkarılır",
-            5.0, 20.0, 10.0, 0.5, key="vif_thr"
-        )
+                        st.markdown("**1️⃣ Korelasyon Filtresi**")
+                        st.dataframe(
+                            res["corr_tbl"].style.format({"|r| ile Close": "{:.4f}"}),
+                            use_container_width=True, hide_index=True,
+                        )
+                        ca, cb = st.columns(2)
+                        with ca:
+                            st.error(f"Düşük |r| → çıkar: {res['corr_low'] if res['corr_low'] else 'Yok'}")
+                            st.warning(f"Multicollinearity → çıkar: {res['corr_high'] if res['corr_high'] else 'Yok'}")
+                        with cb:
+                            st.success(f"Kalan ({len(res['after_corr'])}): {res['after_corr']}")
 
-        if st.button("▶ VIF Analizini Çalıştır", key="run_vif"):
-            after_corr = st.session_state.get("fs_after_corr", all_candidates)
-            sub = fs_df[after_corr].dropna()
-            X   = sub.values.astype(float)
+                        st.markdown("**2️⃣ VIF Analizi**")
+                        _t = _vif_thr
+                        def _vc(val, t=_t):
+                            if not isinstance(val, (int, float)): return ""
+                            if val > t:         return "background-color:#f8d7da; color:#842029"
+                            if val > t * 0.7:   return "background-color:#fff3cd; color:#664d03"
+                            return                     "background-color:#d1e7dd; color:#0a3622"
+                        st.dataframe(
+                            res["vif_df"].style.map(_vc, subset=["VIF"]),
+                            use_container_width=True, hide_index=True,
+                        )
+                        ca, cb = st.columns(2)
+                        with ca:
+                            st.error(f"VIF > {_vif_thr} → çıkar: {res['vif_rem'] if res['vif_rem'] else 'Yok'}")
+                        with cb:
+                            st.success(f"Kalan ({len(res['after_vif'])}): {res['after_vif']}")
 
-            rows = []
-            for i, col in enumerate(after_corr):
-                try:
-                    v = variance_inflation_factor(X, i)
-                except Exception:
-                    v = np.nan
-                rows.append({"Feature": col, "VIF": round(v, 2)})
+                        st.markdown("**3️⃣ ADF Durağanlık Testi**")
+                        def _ac(val):
+                            if not isinstance(val, str): return ""
+                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                            return ""
+                        st.dataframe(
+                            res["adf_df"].style.map(_ac, subset=["Durum"]),
+                            use_container_width=True, hide_index=True,
+                        )
+                        non_feat = [f for f in res["non_stat"] if f != target]
+                        if non_feat:
+                            st.warning(f"Durağan Olmayan: `{'`, `'.join(non_feat)}`")
+                        if not res["non_stat"]:
+                            st.success("Tüm değişkenler durağan.")
 
-            vif_df  = pd.DataFrame(rows).sort_values("VIF", ascending=False)
-            vif_rem = vif_df[vif_df["VIF"] > vif_thr]["Feature"].tolist()
-            survive = [f for f in after_corr if f not in vif_rem]
+                # ── KARŞILAŞTIRMA ────────────────────────────────
+                st.markdown("---")
+                st.markdown("### 📊 Karşılaştırma")
 
-            st.session_state.update({
-                "fs_vif_df":     vif_df,
-                "fs_vif_remove": vif_rem,
-                "fs_after_vif":  survive,
-                "fs_s2": True,
-            })
-
-        if st.session_state.get("fs_s2"):
-            vif_df   = st.session_state["fs_vif_df"]
-            vif_rem  = st.session_state["fs_vif_remove"]
-            survive  = st.session_state["fs_after_vif"]
-            _vif_thr = vif_thr
-
-            def _vif_color(val):
-                if not isinstance(val, (int, float)): return ""
-                if val > _vif_thr:            return "background-color:#f8d7da; color:#842029"
-                if val > _vif_thr * 0.7:      return "background-color:#fff3cd; color:#664d03"
-                return                                "background-color:#d1e7dd; color:#0a3622"
-
-            st.dataframe(
-                vif_df.style.map(_vif_color, subset=["VIF"]),
-                use_container_width=True, hide_index=True
-            )
-            ca, cb = st.columns(2)
-            with ca:
-                st.error(f"**VIF > {vif_thr} → çıkar:** {vif_rem if vif_rem else 'Yok'}")
-            with cb:
-                st.success(f"**Kalan ({len(survive)}):** {survive}")
-
-        # ── ADIM 3: MUTUAL INFORMATION ───────────────────────────
-        st.markdown("---")
-        st.markdown("### 3️⃣ Mutual Information")
-        st.caption("VIF adımından hayatta kalanlar üzerinde çalışır. Non-lineer ilişkileri de yakalar.")
-
-        mi_pct = st.slider(
-            "Alt yüzdelik dilim eşiği — bu dilimin altındakiler çıkarılır (%)",
-            5, 40, 20, 5, key="mi_pct"
-        )
-
-        if st.button("▶ MI Analizini Çalıştır", key="run_mi"):
-            after_vif = st.session_state.get("fs_after_vif", all_candidates)
-            sub       = fs_df[after_vif + [target]].replace([np.inf, -np.inf], np.nan).dropna()
-            X_mi      = sub[after_vif].values
-            y_mi      = sub[target].values
-
-            scores  = mutual_info_regression(X_mi, y_mi, random_state=42)
-            mi_df   = pd.DataFrame({"Feature": after_vif, "MI Skoru": scores.round(4)})
-            mi_df   = mi_df.sort_values("MI Skoru", ascending=False)
-
-            thr_val = np.percentile(scores, mi_pct)
-            mi_rem  = mi_df[mi_df["MI Skoru"] < thr_val]["Feature"].tolist()
-            survive = [f for f in after_vif if f not in mi_rem]
-
-            st.session_state.update({
-                "fs_mi_df":     mi_df,
-                "fs_mi_remove": mi_rem,
-                "fs_after_mi":  survive,
-                "fs_mi_thr":    thr_val,
-                "fs_s3": True,
-            })
-
-        if st.session_state.get("fs_s3"):
-            mi_df   = st.session_state["fs_mi_df"]
-            mi_rem  = st.session_state["fs_mi_remove"]
-            survive = st.session_state["fs_after_mi"]
-            thr_val = st.session_state.get("fs_mi_thr", 0)
-
-            colors_mi = ["#dc3545" if f in mi_rem else "#198754" for f in mi_df["Feature"]]
-            fig_mi, ax_mi = plt.subplots(figsize=(8, max(3, len(mi_df) * 0.45)))
-            ax_mi.barh(mi_df["Feature"], mi_df["MI Skoru"], color=colors_mi)
-            ax_mi.axvline(thr_val, color="#ffc107", linestyle="--", linewidth=1.2, label=f"Eşik: {thr_val:.4f}")
-            ax_mi.legend(fontsize=9)
-            ax_mi.set_xlabel("MI Skoru")
-            ax_mi.set_title("Mutual Information Skorları")
-            ax_mi.invert_yaxis()
-            fig_mi.tight_layout()
-            buf_mi = BytesIO()
-            fig_mi.savefig(buf_mi, format="png", dpi=130, bbox_inches="tight")
-            buf_mi.seek(0)
-            st.image(buf_mi)
-            plt.close(fig_mi)
-
-            ca, cb = st.columns(2)
-            with ca:
-                st.error(f"**Alt %{mi_pct} → çıkar:** {mi_rem if mi_rem else 'Yok'}")
-            with cb:
-                st.success(f"**Kalan ({len(survive)}):** {survive}")
-
-        # ── ADIM 4: ADF DURAĞANLIK ───────────────────────────────
-        st.markdown("---")
-        st.markdown("### 4️⃣ ADF Durağanlık Testi")
-        st.caption(
-            "MI adımından hayatta kalanlar + Close üzerinde çalışır. "
-            "p < 0.05 → durağan  |  p ≥ 0.05 → durağan değil."
-        )
-
-        if st.button("▶ ADF Testini Çalıştır", key="run_adf"):
-            after_mi  = st.session_state.get("fs_after_mi", all_candidates)
-            test_cols = after_mi + [target]
-            rows = []
-            for col in test_cols:
-                series = fs_df[col].dropna()
-                try:
-                    stat, pval, _, _, crit, _ = adfuller(series, autolag="AIC")
-                    stationary = pval < 0.05
-                    rows.append({
-                        "Feature":         col,
-                        "ADF İstatistiği": round(stat, 4),
-                        "p-değeri":        round(pval, 4),
-                        "Kritik (%5)":     round(crit["5%"], 4),
-                        "Durum":           "✅ Durağan" if stationary else "❌ Durağan Değil",
-                    })
-                except Exception:
-                    rows.append({
-                        "Feature": col, "ADF İstatistiği": np.nan,
-                        "p-değeri": np.nan, "Kritik (%5)": np.nan, "Durum": "⚠️ Hata",
+                comp_rows = []
+                for ds_name, res in fs_results.items():
+                    adf_pass  = res["adf_df"]["Durum"].str.startswith("✅").sum()
+                    adf_total = len(res["adf_df"])
+                    comp_rows.append({
+                        "Veri Seti":          ds_name,
+                        "Başlangıç":          len(res["candidates"]),
+                        "Korelasyon Sonrası": len(res["after_corr"]),
+                        "VIF Sonrası":        len(res["after_vif"]),
+                        "ADF Geçen":          f"{adf_pass}/{adf_total}",
+                        "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
                     })
 
-            adf_df   = pd.DataFrame(rows)
-            non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
+                st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
 
-            st.session_state.update({
-                "fs_adf_df":         adf_df,
-                "fs_non_stationary": non_stat,
-                "fs_s4": True,
-            })
+                if len(fs_results) > 1:
+                    all_survivors = [set(res["after_vif"]) for res in fs_results.values()]
+                    common        = set.intersection(*all_survivors)
+                    if common:
+                        st.success(f"**Tüm veri setlerinde ortak hayatta kalanlar ({len(common)}):** `{'`, `'.join(sorted(common))}`")
+                    else:
+                        st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
 
-        if st.session_state.get("fs_s4"):
-            adf_df   = st.session_state["fs_adf_df"]
-            non_stat = st.session_state.get("fs_non_stationary", [])
+                # ── SONUÇ & EXCEL İNDİR ──────────────────────────
+                st.markdown("---")
+                st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
 
-            def _adf_color(val):
-                if not isinstance(val, str): return ""
-                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                return ""
+                dl_key     = "4 — Derin Öğrenmeye Hazır"
+                ref_res    = fs_results.get(dl_key) or next(iter(fs_results.values()))
+                final_features = ref_res["after_vif"]
+                fs_df      = DATASETS.get(dl_key, dl_df)
+                all_candidates = ref_res["candidates"]
 
-            st.dataframe(
-                adf_df.style.map(_adf_color, subset=["Durum"]),
-                use_container_width=True, hide_index=True
-            )
-
-            non_feat = [f for f in non_stat if f != target]
-            if non_feat:
-                st.warning(
-                    f"**Durağan Olmayan Feature'lar:** `{'`, `'.join(non_feat)}` — "
-                    "log veya diff dönüşümü önerilebilir. LSTM için zorunlu değildir."
+                st.info(
+                    f"**Hayatta kalan feature'lar — {dl_key if dl_key in fs_results else list(fs_results.keys())[0]}"
+                    f" ({len(final_features)}):** `{'`, `'.join(final_features)}`"
                 )
-            if target in non_stat:
-                st.warning(
-                    "**Close durağan değil** — tahmin hedefi olduğu için çıkarılmaz; "
-                    "gerekirse log(Close) türetebilirsiniz."
+
+                st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
+                export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
+                final_selected    = [target]
+                fs_cols_per_row   = 4
+                fs_rows = [export_candidates[i:i+fs_cols_per_row] for i in range(0, len(export_candidates), fs_cols_per_row)]
+                for fs_row in fs_rows:
+                    fs_cb_cols = st.columns(len(fs_row))
+                    for i, col_name in enumerate(fs_row):
+                        with fs_cb_cols[i]:
+                            disabled = col_name == target
+                            checked  = st.checkbox(col_name, value=True, key=f"fs_cb_{col_name}", disabled=disabled)
+                            if checked and col_name not in final_selected:
+                                final_selected.append(col_name)
+
+                export_final = fs_df[final_selected].copy()
+                export_final.index.name = date_col_name
+                export_final = export_final.reset_index()
+
+                buf_final = BytesIO()
+                with pd.ExcelWriter(buf_final, engine="openpyxl") as writer:
+                    export_final.to_excel(writer, index=False, sheet_name="Data")
+                buf_final.seek(0)
+
+                st.download_button(
+                    label=f"📥 Derin Öğrenmeye Hazır Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
+                    data=buf_final.getvalue(),
+                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready_selected.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-            if not non_stat:
-                st.success("Tüm değişkenler durağan.")
-
-        # ── SONUÇ & EXCEL İNDİR ──────────────────────────────────
-        st.markdown("---")
-        st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
-
-        final_features = st.session_state.get("fs_after_mi", all_candidates)
-        st.info(
-            f"**Hayatta kalan feature'lar ({len(final_features)}):** "
-            f"`{'`, `'.join(final_features)}`"
-        )
-
-        # Checkbox seçim konsolu
-        st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
-        export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
-        final_selected = [target]  # Close her zaman dahil
-        fs_cols_per_row = 4
-        fs_rows = [export_candidates[i:i+fs_cols_per_row] for i in range(0, len(export_candidates), fs_cols_per_row)]
-        for fs_row in fs_rows:
-            fs_cb_cols = st.columns(len(fs_row))
-            for i, col_name in enumerate(fs_row):
-                with fs_cb_cols[i]:
-                    disabled = col_name == target
-                    checked  = st.checkbox(col_name, value=True, key=f"fs_cb_{col_name}", disabled=disabled)
-                    if checked and col_name not in final_selected:
-                        final_selected.append(col_name)
-
-        export_final = fs_df[final_selected].copy()
-        export_final.index.name = date_col_name
-        export_final = export_final.reset_index()
-
-        buf_final = BytesIO()
-        with pd.ExcelWriter(buf_final, engine="openpyxl") as writer:
-            export_final.to_excel(writer, index=False, sheet_name="Data")
-        buf_final.seek(0)
-
-        st.download_button(
-            label=f"📥 Derin Öğrenmeye Hazır Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
-            data=buf_final.getvalue(),
-            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_dl_ready_selected.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
 
     else:
         st.warning("Filtreleme sonrası veri kalmadı.")
