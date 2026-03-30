@@ -568,7 +568,7 @@ if symbol:
         buf_dl.seek(0)
 
         st.download_button(
-            label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+            label=f"📥 Temizlenmiş ve Dönüştürülmüş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
             data=buf_dl.getvalue(),
             file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
