@@ -506,7 +506,7 @@ if symbol:
 
         file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
         st.download_button(
-            label=f"📥 OHLC Eşit Satırlar Çıkarılmış - Deep Learning için uygun ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
+            label=f"📥 Excel İndir — OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
             data=excel_clean.getvalue(),
             file_name=file_name_clean,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -526,7 +526,7 @@ if symbol:
 
         file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
         st.download_button(
-            label=f"📥 OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
+            label=f"📥 Excel İndir — OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
             data=excel_clean2.getvalue(),
             file_name=file_name_clean2,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -822,7 +822,7 @@ if symbol:
                     for i, col_name in enumerate(fs_row):
                         with fs_cb_cols[i]:
                             disabled = col_name == target
-                            checked  = st.checkbox(col_name, value=True, key=f"fs_cb_{col_name}", disabled=disabled)
+                            checked  = st.checkbox(col_name, value=disabled, key=f"fs_cb_{col_name}", disabled=disabled)
                             if checked and col_name not in final_selected:
                                 final_selected.append(col_name)
 
