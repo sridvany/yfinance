@@ -26,7 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indirici")
-st.caption("garbage in, garbage out...")
+st.caption("ne ekersen onu biçersin...")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
