@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tsa.stattools import adfuller
 
-st.set_page_config(page_title="yfinance veri indirici", layout="centered")
+st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
 
 st.markdown("""
 <style>
