@@ -453,7 +453,7 @@ if symbol:
     excel_buf.seek(0)
     file_name = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}.xlsx"
     st.download_button(
-        label=f"📥 OHLCV - HAM ({len(export_df):,} satır)",
+        label=f"📥 Excel İndir ({len(export_df):,} satır)",
         data=excel_buf.getvalue(),
         file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -506,7 +506,7 @@ if symbol:
 
         file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
         st.download_button(
-            label=f"📥 OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
+            label=f"📥 Excel İndir — OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
             data=excel_clean.getvalue(),
             file_name=file_name_clean,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -526,7 +526,7 @@ if symbol:
 
         file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
         st.download_button(
-            label=f"📥 OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
+            label=f"📥 Excel İndir — OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
             data=excel_clean2.getvalue(),
             file_name=file_name_clean2,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -801,14 +801,19 @@ if symbol:
                 st.markdown("---")
                 st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
 
-                dl_key     = "4 — Temizlenmiş ve Transforme Edilmiş"
-                ref_res    = fs_results.get(dl_key) or next(iter(fs_results.values()))
+                dl_key = st.selectbox(
+                    "İndirilecek veri setini seçin:",
+                    list(fs_results.keys()),
+                    index=len(fs_results) - 1,
+                    key="fs_dl_key",
+                )
+                ref_res        = fs_results[dl_key]
                 final_features = ref_res["after_vif"]
-                fs_df      = DATASETS.get(dl_key, dl_df)
+                fs_df          = DATASETS[dl_key]
                 all_candidates = ref_res["candidates"]
 
                 st.info(
-                    f"**Hayatta kalan feature'lar — {dl_key if dl_key in fs_results else list(fs_results.keys())[0]}"
+                    f"**Hayatta kalan feature'lar — {dl_key}"
                     f" ({len(final_features)}):** `{'`, `'.join(final_features)}`"
                 )
 
@@ -838,7 +843,7 @@ if symbol:
                 st.download_button(
                     label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
                     data=buf_final.getvalue(),
-                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis_secili.xlsx",
+                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_{dl_key.split('—')[-1].strip().replace(' ', '_').lower()}_secili.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
