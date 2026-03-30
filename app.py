@@ -773,7 +773,7 @@ Korelasyon nedensellik anlamına gelmez.
             "1 — Ham Veri":              df[[c for c in clean_selected if c in df.columns]].dropna(),
             "2 — OHLC Temizlenmiş":      df_clean[clean_selected].dropna(),
             "3 — Tam Temizlenmiş":       df_clean2[clean_selected],
-            "4 — Derin Öğrenmeye Hazır": dl_df,
+            "4 — Temizlenmiş ve Transforme Edilmiş": dl_df,
         }
 
         dataset_options   = list(DATASETS.keys())
@@ -962,7 +962,7 @@ Korelasyon nedensellik anlamına gelmez.
                 st.markdown("---")
                 st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
 
-                dl_key     = "4 — Derin Öğrenmeye Hazır"
+                dl_key     = "4 — Temizlenmiş ve Transforme Edilmiş"
                 ref_res    = fs_results.get(dl_key) or next(iter(fs_results.values()))
                 final_features = ref_res["after_vif"]
                 fs_df      = DATASETS.get(dl_key, dl_df)
