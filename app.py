@@ -443,7 +443,7 @@ if symbol:
     # Excel İndir
     # ============================================================
 
-    st.subheader("İndir")
+    st.subheader("İndir - Seçili Veriler")
     export_df = df[selected_cols].copy()
     export_df.index.name = "Datetime" if is_intraday else "Date"
     export_df = export_df.reset_index()
