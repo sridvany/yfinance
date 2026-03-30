@@ -590,170 +590,7 @@ if symbol:
 > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
             """)
 
-        # ============================================================
-        # SPEARMAN KORELASYON ANALİZİ
-        # ============================================================
 
-        st.divider()
-        st.subheader("🔗 Spearman Korelasyon Analizi")
-        st.caption(
-            "Seçilen sayısal sütunlar arasında Spearman sıra korelasyonu ve p-değerleri hesaplanır. "
-            "Parametrik olmayan bu yöntem, lineer olmayan ilişkileri de yakalar."
-        )
-
-        numeric_cols = [c for c in dl_df.columns if pd.api.types.is_numeric_dtype(dl_df[c])]
-
-        if len(numeric_cols) < 2:
-            st.info("Spearman analizi için en az 2 sayısal sütun seçmelisiniz.")
-        else:
-            k     = len(numeric_cols)
-            alpha = st.slider(
-                "Anlamlılık Eşiği (α)",
-                min_value=0.01, max_value=0.10, value=0.05, step=0.01,
-                help="Bu değerin altındaki p-değerleri istatistiksel olarak anlamlı kabul edilir."
-            )
-
-            if st.button("Spearman Korelasyonunu Hesapla"):
-                sub = dl_df[numeric_cols].dropna()
-                n   = len(sub)
-
-                rho_mat = pd.DataFrame(np.nan, index=numeric_cols, columns=numeric_cols)
-                p_mat   = pd.DataFrame(np.nan, index=numeric_cols, columns=numeric_cols)
-
-                for i, c1 in enumerate(numeric_cols):
-                    for j, c2 in enumerate(numeric_cols):
-                        if i == j:
-                            rho_mat.loc[c1, c2] = 1.0
-                            p_mat.loc[c1, c2]   = 0.0
-                        elif i < j:
-                            rho, pval = stats.spearmanr(sub[c1], sub[c2])
-                            rho_mat.loc[c1, c2] = rho_mat.loc[c2, c1] = round(rho, 4)
-                            p_mat.loc[c1, c2]   = p_mat.loc[c2, c1]   = round(pval, 4)
-
-                st.session_state["spearman_rho"]   = rho_mat
-                st.session_state["spearman_p"]     = p_mat
-                st.session_state["spearman_n"]     = n
-                st.session_state["spearman_alpha"] = alpha
-                st.session_state["spearman_cols"]  = numeric_cols
-
-            if "spearman_rho" in st.session_state:
-                rho_mat      = st.session_state["spearman_rho"]
-                p_mat        = st.session_state["spearman_p"]
-                n            = st.session_state["spearman_n"]
-                alpha        = st.session_state["spearman_alpha"]
-                numeric_cols = st.session_state["spearman_cols"]
-                k            = len(numeric_cols)
-
-                st.markdown("### Korelasyon Isı Haritası")
-                fig2, ax2 = plt.subplots(figsize=(max(6, k * 0.9), max(5, k * 0.8)))
-                cmap = plt.cm.RdYlGn
-                im   = ax2.imshow(rho_mat.values.astype(float), cmap=cmap, vmin=-1, vmax=1, aspect="auto")
-                plt.colorbar(im, ax=ax2, shrink=0.8, label="Spearman ρ")
-                ax2.set_xticks(range(k)); ax2.set_xticklabels(numeric_cols, rotation=45, ha="right", fontsize=9)
-                ax2.set_yticks(range(k)); ax2.set_yticklabels(numeric_cols, fontsize=9)
-                ax2.set_title(f"{symbol} — Spearman Korelasyon Matrisi (n={n})", fontsize=11, fontweight="bold")
-
-                for i in range(k):
-                    for j in range(k):
-                        val = rho_mat.values[i, j]
-                        if not np.isnan(val):
-                            sig       = (i != j) and (p_mat.values[i, j] < alpha)
-                            txt_color = "black" if abs(val) < 0.5 else "white"
-                            marker    = "*" if sig else ""
-                            ax2.text(j, i, f"{val:.2f}{marker}", ha="center", va="center",
-                                     fontsize=7.5, color=txt_color, fontweight="bold" if sig else "normal")
-
-                fig2.tight_layout()
-                buf2 = BytesIO()
-                fig2.savefig(buf2, format="png", dpi=150, bbox_inches="tight")
-                buf2.seek(0)
-                img_b64_2 = base64.b64encode(buf2.read()).decode()
-                plt.close(fig2)
-                st.markdown("*  = α düzeyinde istatistiksel olarak anlamlı &nbsp;|&nbsp; Görsele sağ tıklayıp kopyalayabilirsiniz.*")
-                st.markdown(
-                    f'<img src="data:image/png;base64,{img_b64_2}" style="width:100%; border-radius:8px;" />',
-                    unsafe_allow_html=True
-                )
-
-                st.markdown(f"### Anlamlı Korelasyonlar (p < {alpha})")
-                pairs = []
-                for i, c1 in enumerate(numeric_cols):
-                    for j, c2 in enumerate(numeric_cols):
-                        if i >= j:
-                            continue
-                        rho  = rho_mat.loc[c1, c2]
-                        pval = p_mat.loc[c1, c2]
-                        if not np.isnan(rho) and pval < alpha:
-                            pairs.append({
-                                "Değişken 1": c1,
-                                "Değişken 2": c2,
-                                "ρ":          rho,
-                                "p-değeri":   pval,
-                                "Yön":        "Pozitif ↑" if rho > 0 else "Negatif ↓",
-                                "Güç":        (
-                                    "Çok Güçlü" if abs(rho) >= 0.80 else
-                                    "Güçlü"     if abs(rho) >= 0.60 else
-                                    "Orta"      if abs(rho) >= 0.40 else
-                                    "Zayıf"
-                                ),
-                            })
-
-                if pairs:
-                    pairs_df = pd.DataFrame(pairs).sort_values("ρ", key=abs, ascending=False)
-
-                    def color_rho(val):
-                        if not isinstance(val, float): return ""
-                        c     = plt.cm.RdYlGn((val + 1) / 2)
-                        hex_c = mcolors.to_hex(c)
-                        text  = "black" if abs(val) < 0.5 else "white"
-                        return f"background-color: {hex_c}; color: {text}; font-weight: bold"
-
-                    st.dataframe(
-                        pairs_df.style.map(color_rho, subset=["ρ"]),
-                        use_container_width=True, hide_index=True
-                    )
-
-                    excel_corr = BytesIO()
-                    with pd.ExcelWriter(excel_corr, engine="openpyxl") as w:
-                        rho_mat.to_excel(w, sheet_name="Rho Matrisi")
-                        p_mat.to_excel(w, sheet_name="P Matrisi")
-                        pairs_df.to_excel(w, sheet_name="Anlamlı Çiftler", index=False)
-                    excel_corr.seek(0)
-                    st.download_button(
-                        label="📥 Korelasyon Sonuçlarını İndir (Excel)",
-                        data=excel_corr.getvalue(),
-                        file_name=f"{symbol.replace('.', '_')}_spearman_{start_date}_{end_date}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.info(f"α = {alpha} düzeyinde anlamlı korelasyon bulunamadı.")
-
-                total_pairs = k * (k - 1) // 2
-                sig_count   = len(pairs) if pairs else 0
-                st.markdown(f"""
-                <div class="info-box">
-                    <b>Gözlem sayısı:</b> {n:,} &nbsp;|&nbsp;
-                    <b>Test edilen çift:</b> {total_pairs} &nbsp;|&nbsp;
-                    <b>Anlamlı çift (p &lt; {alpha}):</b> {sig_count}
-                </div>
-                """, unsafe_allow_html=True)
-
-                with st.expander("📖 Spearman Korelasyonu Hakkında"):
-                    st.markdown(f"""
-**Spearman ρ (rho):** Pearson'ın aksine ham değerler yerine sıralar üzerinden hesaplanır;
-doğrusal olmayan monoton ilişkileri ve aykırı değerlere karşı dayanıklılığı sayesinde
-finansal zaman serilerinde tercih edilir.
-
-| |ρ| | Güç |
-|------|------|
-| 0.80 – 1.00 | Çok Güçlü |
-| 0.60 – 0.79 | Güçlü |
-| 0.40 – 0.59 | Orta |
-| 0.00 – 0.39 | Zayıf |
-
-**Not:** Yıldız (*) işaretli hücreler α = {alpha} düzeyinde anlamlıdır.
-Korelasyon nedensellik anlamına gelmez.
-                    """)
 
         # ============================================================
         # FEATURE SEÇİM ANALİZİ
@@ -762,7 +599,7 @@ Korelasyon nedensellik anlamına gelmez.
         st.divider()
         st.subheader("🔬 Feature Seçim Analizi")
         st.caption(
-            "Seçilen veri setleri üzerinde Korelasyon → VIF → ADF analizleri çalıştırılır. "
+            "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF analizleri çalıştırılır. "
             "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
         )
 
@@ -789,9 +626,9 @@ Korelasyon nedensellik anlamına gelmez.
         else:
             col_p1, col_p2, col_p3 = st.columns(3)
             with col_p1:
-                corr_low_thr  = st.slider("Düşük |r| eşiği — altı çıkar",  0.05, 0.30,  0.15, 0.01,   key="fs_corr_low")
+                corr_low_thr  = st.slider("Düşük |ρ| eşiği — altı çıkar",  0.05, 0.30,  0.15, 0.01,   key="fs_corr_low")
             with col_p2:
-                corr_high_thr = st.slider("Yüksek |r| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
+                corr_high_thr = st.slider("Yüksek |ρ| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
             with col_p3:
                 vif_thr       = st.slider("VIF eşiği — üstü çıkar",         5.0, 20.0,  10.0, 0.5,    key="fs_vif_thr")
 
@@ -808,9 +645,11 @@ Korelasyon nedensellik anlamına gelmez.
                     sub = ds[candidates + [target]].dropna()
 
                     # ── KORELASYON ──────────────────────────────
-                    corr_vals = sub[candidates].corrwith(sub[target]).abs()
+                    corr_vals = sub[candidates].apply(
+                        lambda col: stats.spearmanr(col, sub[target])[0]
+                    ).abs()
                     low_list  = corr_vals[corr_vals < corr_low_thr].index.tolist()
-                    fm        = sub[candidates].corr().abs()
+                    fm        = sub[candidates].corr(method="spearman").abs()
                     upper     = fm.where(np.triu(np.ones(fm.shape), k=1).astype(bool))
                     high_list = []
                     for col in upper.columns:
@@ -822,8 +661,8 @@ Korelasyon nedensellik anlamına gelmez.
                     corr_remove = list(set(low_list + high_list))
                     after_corr  = [f for f in candidates if f not in corr_remove]
                     corr_tbl    = corr_vals.reset_index()
-                    corr_tbl.columns = ["Feature", "|r| ile Close"]
-                    corr_tbl = corr_tbl.sort_values("|r| ile Close", ascending=False)
+                    corr_tbl.columns = ["Feature", "|ρ| ile Close"]
+                    corr_tbl = corr_tbl.sort_values("|ρ| ile Close", ascending=False)
 
                     # ── VIF ─────────────────────────────────────
                     sub_vif  = sub[after_corr].dropna()
@@ -886,14 +725,14 @@ Korelasyon nedensellik anlamına gelmez.
                 for ds_name, res in fs_results.items():
                     with st.expander(f"📊 {ds_name}  —  n={res['n']:,}", expanded=False):
 
-                        st.markdown("**1️⃣ Korelasyon Filtresi**")
+                        st.markdown("**1️⃣ Spearman Korelasyon Filtresi**")
                         st.dataframe(
-                            res["corr_tbl"].style.format({"|r| ile Close": "{:.4f}"}),
+                            res["corr_tbl"].style.format({"|ρ| ile Close": "{:.4f}"}),
                             use_container_width=True, hide_index=True,
                         )
                         ca, cb = st.columns(2)
                         with ca:
-                            st.error(f"Düşük |r| → çıkar: {res['corr_low'] if res['corr_low'] else 'Yok'}")
+                            st.error(f"Düşük |ρ| → çıkar: {res['corr_low'] if res['corr_low'] else 'Yok'}")
                             st.warning(f"Multicollinearity → çıkar: {res['corr_high'] if res['corr_high'] else 'Yok'}")
                         with cb:
                             st.success(f"Kalan ({len(res['after_corr'])}): {res['after_corr']}")
