@@ -585,7 +585,7 @@ if symbol:
 | **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
 | **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
 | **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
-| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
+| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; Derin öğrenme yapılacaksa MinMax scaling öncesi ek işlem gerektirmez |
 | **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
 
 > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
