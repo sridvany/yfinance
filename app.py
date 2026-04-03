@@ -891,9 +891,16 @@ if symbol:
                         st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
 
                 # ── MODEL TAVSİYESİ ───────────────────────────────
-                any_lb   = any(len(r["lb_problem"]) > 0   for r in fs_results.values())
-                any_arch = any(len(r["arch_problem"]) > 0 for r in fs_results.values())
-                any_ns   = any(len(r["non_stat"]) > 0     for r in fs_results.values())
+                advice_key = st.selectbox(
+                    "Tavsiye için veri seti seçin:",
+                    list(fs_results.keys()),
+                    index=len(fs_results) - 1,
+                    key="fs_advice_key",
+                )
+                advice_res = fs_results[advice_key]
+                any_lb   = len(advice_res["lb_problem"]) > 0
+                any_arch = len(advice_res["arch_problem"]) > 0
+                any_ns   = len(advice_res["non_stat"]) > 0
 
                 with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
                     st.markdown("""
