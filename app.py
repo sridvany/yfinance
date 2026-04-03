@@ -616,7 +616,7 @@ if symbol:
 
         numeric_cols  = [c for c in clean_selected if pd.api.types.is_numeric_dtype(df[c])]
         default_idx   = numeric_cols.index("Close") if "Close" in numeric_cols else 0
-        target        = st.selectbox("🎯 Hedef Değişken (Target) - Korelasyon için", numeric_cols, index=default_idx, key="fs_target")
+        target        = st.selectbox("🎯 Hedef Değişken (Target) - Korelasyon", numeric_cols, index=default_idx, key="fs_target")
 
         dataset_options   = list(DATASETS.keys())
         selected_datasets = st.multiselect(
