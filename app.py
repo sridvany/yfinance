@@ -454,7 +454,7 @@ if symbol:
     excel_buf.seek(0)
     file_name = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}.xlsx"
     st.download_button(
-        label=f"📥 Ham Veriler ({len(export_df):,} satır)",
+        label=f"📥 Ham Veriler — {symbol.upper()} ({len(export_df):,} satır)",
         data=excel_buf.getvalue(),
         file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
