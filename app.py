@@ -890,6 +890,62 @@ if symbol:
                     else:
                         st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
 
+                # ── MODEL TAVSİYESİ ───────────────────────────────
+                any_lb   = any(len(r["lb_problem"]) > 0   for r in fs_results.values())
+                any_arch = any(len(r["arch_problem"]) > 0 for r in fs_results.values())
+                any_ns   = any(len(r["non_stat"]) > 0     for r in fs_results.values())
+
+                with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
+                    st.markdown("""
+| Test | Sonuç | Regresyon Etkisi | Tavsiye |
+|---|---|---|---|
+| **ADF (Durağanlık)** | {} | Durağan olmayan seri sahte regresyon üretir | {} |
+| **Ljung-Box (Otokorelasyon)** | {} | Standart hatalar yanlış, t-istatistikleri güvenilmez | {} |
+| **ARCH (Heteroskedasticity)** | {} | Varyans sabit değil, OLS verimsiz kalır | {} |
+""".format(
+                        "❌ Sorun var" if any_ns   else "✅ Temiz",
+                        "Fark alma (`diff`) veya log-return kullan" if any_ns else "İşlem gerekmez",
+                        "❌ Sorun var" if any_lb   else "✅ Temiz",
+                        "OLS + **HAC/Newey-West** standart hata kullan" if any_lb else "Standart OLS uygulanabilir",
+                        "❌ Sorun var" if any_arch else "✅ Temiz",
+                        "Volatilite tahmini → **GARCH**; getiri tahmini → OLS+HAC yeterli" if any_arch else "OLS varyans tahmini güvenilir",
+                    ))
+
+                    st.markdown("---")
+                    st.markdown("#### 🎯 Önerilen Yaklaşım")
+
+                    if any_lb and any_arch:
+                        st.warning("""
+**Hem otokorelasyon hem ARCH etkisi tespit edildi.**
+
+- **Klasik regresyon:** OLS + HAC (Newey-West) standart hata
+- **Volatilite modellemesi:** GARCH / EGARCH
+- **Makine öğrenmesi:** Doğrudan kullanılabilir — bu testler ML için geçerli değil
+- **Derin öğrenme:** Doğrudan kullanılabilir — LSTM/Transformer zaman bağımlılığını öğrenir
+                        """)
+                    elif any_lb:
+                        st.warning("""
+**Otokorelasyon tespit edildi, ARCH etkisi yok.**
+
+- **Klasik regresyon:** OLS + HAC (Newey-West) standart hata
+- **Makine öğrenmesi / Derin öğrenme:** Doğrudan kullanılabilir
+                        """)
+                    elif any_arch:
+                        st.warning("""
+**ARCH etkisi tespit edildi, otokorelasyon yok.**
+
+- **Getiri tahmini:** OLS uygulanabilir, standart hatalar güvenilir
+- **Volatilite tahmini:** GARCH / EGARCH önerilir
+- **Makine öğrenmesi / Derin öğrenme:** Doğrudan kullanılabilir
+                        """)
+                    else:
+                        st.success("""
+**Tüm testler temiz.**
+
+- Klasik OLS regresyon doğrudan uygulanabilir
+- Makine öğrenmesi / Derin öğrenme doğrudan kullanılabilir
+                        """)
+
                 # ── SONUÇ & EXCEL İNDİR ──────────────────────────
                 st.markdown("---")
                 st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
