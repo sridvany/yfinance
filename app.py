@@ -614,6 +614,10 @@ if symbol:
             "4 — Temizlenmiş ve Transforme Edilmiş": dl_df,
         }
 
+        numeric_cols  = [c for c in clean_selected if pd.api.types.is_numeric_dtype(df[c])]
+        default_idx   = numeric_cols.index("Close") if "Close" in numeric_cols else 0
+        target        = st.selectbox("🎯 Hedef Değişken (Target)", numeric_cols, index=default_idx, key="fs_target")
+
         dataset_options   = list(DATASETS.keys())
         selected_datasets = st.multiselect(
             "Analiz edilecek veri setlerini seçin:",
