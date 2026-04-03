@@ -664,19 +664,36 @@ if symbol:
                     corr_tbl.columns = ["Feature", "|ρ| ile Close"]
                     corr_tbl = corr_tbl.sort_values("|ρ| ile Close", ascending=False)
 
-                    # ── VIF ─────────────────────────────────────
-                    sub_vif  = sub[after_corr].dropna()
-                    X        = sub_vif.values.astype(float)
+                    # ── VIF (iterative elimination) ──────────────
+                    remaining = after_corr.copy()
+                    vif_rem   = []
+                    while True:
+                        sub_vif = sub[remaining].dropna()
+                        X       = sub_vif.values.astype(float)
+                        vif_vals = {}
+                        for i, col in enumerate(remaining):
+                            try:
+                                vif_vals[col] = variance_inflation_factor(X, i)
+                            except Exception:
+                                vif_vals[col] = np.nan
+                        max_col = max(vif_vals, key=lambda c: vif_vals[c] if not np.isnan(vif_vals[c]) else 0)
+                        if vif_vals[max_col] > vif_thr:
+                            vif_rem.append(max_col)
+                            remaining.remove(max_col)
+                        else:
+                            break
+                    # Son turu tablo için sakla
+                    sub_vif = sub[remaining].dropna()
+                    X       = sub_vif.values.astype(float)
                     vif_rows = []
-                    for i, col in enumerate(after_corr):
+                    for i, col in enumerate(remaining):
                         try:
                             v = variance_inflation_factor(X, i)
                         except Exception:
                             v = np.nan
                         vif_rows.append({"Feature": col, "VIF": round(v, 2)})
                     vif_df    = pd.DataFrame(vif_rows).sort_values("VIF", ascending=False)
-                    vif_rem   = vif_df[vif_df["VIF"] > vif_thr]["Feature"].tolist()
-                    after_vif = [f for f in after_corr if f not in vif_rem]
+                    after_vif = remaining
 
                     # ── ADF ─────────────────────────────────────
                     adf_rows = []
