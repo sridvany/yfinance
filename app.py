@@ -175,21 +175,21 @@ def calc_amihud(close, volume):
 
 def calc_mec(close, window=63):
     """Market Efficiency Coefficient
-    MEC = Var(haftalık getiri) / (T × Var(günlük getiri))
-    T = 5, pencere = 3 ay (~63 işlem günü)
+    MEC = Var(ln(Ct / Ct-30)) / (6 × Var(ln(Ct / Ct-5)))
+    T = 30/5 = 6, pencere = 3 ay (~63 işlem günü)
     MEC ≈ 1 → piyasa verimli/dayanıklı
     """
-    T          = 5
-    ret_daily  = np.log(close / close.shift(1))
-    ret_weekly = np.log(close / close.shift(5))
-    var_daily  = ret_daily.rolling(window=window).var()
-    var_weekly = ret_weekly.rolling(window=window).var()
-    return var_weekly / (T * var_daily)
+    T          = 6
+    ret_long   = np.log(close / close.shift(30))
+    ret_short  = np.log(close / close.shift(5))
+    var_long   = ret_long.rolling(window=window).var()
+    var_short  = ret_short.rolling(window=window).var()
+    return var_long / (T * var_short)
 
 def calc_corwin_schultz(high, low):
     """Corwin-Schultz Bid-Ask Spread Tahmini
-    β = Σ [ln(H_t+j / L_t+j)]² (j=0,1)
-    γ = [ln(H_t,t+1 / L_t,t+1)]²
+    β = [ln(H_t / L_t)]² + [ln(H_t-1 / L_t-1)]²  — t-1 ve t kullanılır (look-ahead yok)
+    γ = [ln(max(H_t, H_t-1) / min(L_t, L_t-1))]²
     α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
     S = 2(e^α - 1) / (1 + e^α)
     Negatif α → 0
@@ -197,14 +197,14 @@ def calc_corwin_schultz(high, low):
     sqrt2   = np.sqrt(2)
     denom   = 3 - 2 * sqrt2
 
-    log_hl       = np.log(high / low)
-    log_hl2      = log_hl ** 2
-    log_hl_next  = np.log(high.shift(-1) / low.shift(-1)) ** 2
+    log_hl      = np.log(high / low)
+    log_hl2     = log_hl ** 2
+    log_hl_prev = np.log(high.shift(1) / low.shift(1)) ** 2
 
-    beta  = log_hl2 + log_hl_next
+    beta  = log_hl2 + log_hl_prev
 
-    h2    = pd.concat([high, high.shift(-1)], axis=1).max(axis=1)
-    l2    = pd.concat([low,  low.shift(-1)],  axis=1).min(axis=1)
+    h2    = pd.concat([high.shift(1), high], axis=1).max(axis=1)
+    l2    = pd.concat([low.shift(1),  low],  axis=1).min(axis=1)
     gamma = np.log(h2 / l2) ** 2
 
     alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / denom - np.sqrt(gamma / denom)
