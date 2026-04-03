@@ -13,6 +13,7 @@ from scipy import stats
 import plotly.graph_objects as go
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
 st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
 
@@ -599,7 +600,7 @@ if symbol:
         st.divider()
         st.subheader("🔬 Feature Seçim Analizi")
         st.caption(
-            "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF analizleri çalıştırılır. "
+            "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF → Ljung-Box → ARCH analizleri çalıştırılır. "
             "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
         )
 
@@ -717,6 +718,41 @@ if symbol:
                     adf_df   = pd.DataFrame(adf_rows)
                     non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
 
+                    # ── LJUNG-BOX (Otokorelasyon) ────────────────
+                    lb_rows = []
+                    for col in after_vif + [target]:
+                        series = ds[col].dropna()
+                        try:
+                            lb_result = acorr_ljungbox(series, lags=[10], return_df=True)
+                            pval      = float(lb_result["lb_pvalue"].iloc[0])
+                            has_ac    = pval < 0.05
+                            lb_rows.append({
+                                "Feature":     col,
+                                "LB p-değeri": round(pval, 4),
+                                "Durum":       "❌ Otokorelasyon Var" if has_ac else "✅ Otokorelasyon Yok",
+                            })
+                        except Exception:
+                            lb_rows.append({"Feature": col, "LB p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                    lb_df      = pd.DataFrame(lb_rows)
+                    lb_problem = lb_df[lb_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+
+                    # ── ARCH (Heteroskedasticity) ─────────────────
+                    arch_rows = []
+                    for col in after_vif + [target]:
+                        series = ds[col].dropna()
+                        try:
+                            _, pval, _, _ = het_arch(series, nlags=5)
+                            has_arch      = pval < 0.05
+                            arch_rows.append({
+                                "Feature":       col,
+                                "ARCH p-değeri": round(pval, 4),
+                                "Durum":         "❌ ARCH Etkisi Var" if has_arch else "✅ ARCH Etkisi Yok",
+                            })
+                        except Exception:
+                            arch_rows.append({"Feature": col, "ARCH p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                    arch_df      = pd.DataFrame(arch_rows)
+                    arch_problem = arch_df[arch_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+
                     fs_results[ds_name] = {
                         "n":           len(sub),
                         "candidates":  candidates,
@@ -729,6 +765,10 @@ if symbol:
                         "after_vif":   after_vif,
                         "adf_df":      adf_df,
                         "non_stat":    non_stat,
+                        "lb_df":       lb_df,
+                        "lb_problem":  lb_problem,
+                        "arch_df":     arch_df,
+                        "arch_problem": arch_problem,
                     }
 
                 st.session_state["fs_results"]      = fs_results
@@ -787,6 +827,38 @@ if symbol:
                         if not res["non_stat"]:
                             st.success("Tüm değişkenler durağan.")
 
+                        st.markdown("**4️⃣ Ljung-Box Otokorelasyon Testi** *(lag=10)*")
+                        def _lbc(val):
+                            if not isinstance(val, str): return ""
+                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                            return ""
+                        st.dataframe(
+                            res["lb_df"].style.map(_lbc, subset=["Durum"]),
+                            use_container_width=True, hide_index=True,
+                        )
+                        lb_feat = [f for f in res["lb_problem"] if f != target]
+                        if lb_feat:
+                            st.warning(f"Otokorelasyon Tespit Edildi: `{'`, `'.join(lb_feat)}` — GLS/HAC standart hata veya fark alma önerilir.")
+                        else:
+                            st.success("Otokorelasyon tespit edilmedi.")
+
+                        st.markdown("**5️⃣ ARCH Heteroskedasticity Testi** *(lag=5)*")
+                        def _archc(val):
+                            if not isinstance(val, str): return ""
+                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                            return ""
+                        st.dataframe(
+                            res["arch_df"].style.map(_archc, subset=["Durum"]),
+                            use_container_width=True, hide_index=True,
+                        )
+                        arch_feat = [f for f in res["arch_problem"] if f != target]
+                        if arch_feat:
+                            st.warning(f"ARCH Etkisi Tespit Edildi: `{'`, `'.join(arch_feat)}` — Volatilite kümelenmesi var, GARCH modelleme düşünülebilir.")
+                        else:
+                            st.success("ARCH etkisi tespit edilmedi.")
+
                 # ── KARŞILAŞTIRMA ────────────────────────────────
                 st.markdown("---")
                 st.markdown("### 📊 Karşılaştırma")
@@ -795,12 +867,16 @@ if symbol:
                 for ds_name, res in fs_results.items():
                     adf_pass  = res["adf_df"]["Durum"].str.startswith("✅").sum()
                     adf_total = len(res["adf_df"])
+                    lb_pass   = res["lb_df"]["Durum"].str.startswith("✅").sum()
+                    arch_pass = res["arch_df"]["Durum"].str.startswith("✅").sum()
                     comp_rows.append({
                         "Veri Seti":          ds_name,
                         "Başlangıç":          len(res["candidates"]),
                         "Korelasyon Sonrası": len(res["after_corr"]),
                         "VIF Sonrası":        len(res["after_vif"]),
                         "ADF Geçen":          f"{adf_pass}/{adf_total}",
+                        "LB Geçen":           f"{lb_pass}/{adf_total}",
+                        "ARCH Geçen":         f"{arch_pass}/{adf_total}",
                         "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
                     })
 
