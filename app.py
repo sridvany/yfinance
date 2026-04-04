@@ -458,152 +458,152 @@ if symbol:
     # Excel İndir
     # ============================================================
 
-    st.subheader("İndir - Seçili Veriler")
-    export_df = df[selected_cols].copy()
-    export_df.index.name = "Datetime" if is_intraday else "Date"
-    export_df = export_df.reset_index()
-    excel_buf = BytesIO()
-    with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Data")
-    excel_buf.seek(0)
-    file_name = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}.xlsx"
-    st.download_button(
-        label=f"📥 Ham Veriler — {symbol.upper()} ({len(export_df):,} satır)",
-        data=excel_buf.getvalue(),
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    # OHLC eşit satır filtreleyip indikatörleri yeniden hesapla
-    ohlc_mask   = ~((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
-    df_clean    = df[ohlc_mask][["Open", "High", "Low", "Close", "Volume"]].copy()
-    removed_cnt = len(df) - len(df_clean)
-
-    if not df_clean.empty:
-        _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]; _v = df_clean["Volume"]
-
-        # Mevcut indikatörler
-        df_clean["EMA_20"]     = calc_ema(_c, 20)
-        df_clean["EMA_50"]     = calc_ema(_c, 50)
-        df_clean["EMA_200"]    = calc_ema(_c, 200)
-        df_clean["RSI"]        = calc_rsi(_c)
-        df_clean["MACD"]       = calc_macd(_c)[0]
-        df_clean["ATR"]        = calc_atr(_h, _l, _c)
-        df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
-        df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
-        df_clean["Return"]     = _c.pct_change()
-
-        # Yeni indikatörler
-        df_clean["ROC"]        = calc_roc(_c)
-        df_clean["Stoch_K"], df_clean["Stoch_D"] = calc_stochastic(_h, _l, _c)
-        df_clean["ADX"]        = calc_adx(_h, _l, _c)
-        df_clean["Williams_R"] = calc_williams_r(_h, _l, _c)
-        df_clean["CCI"]        = calc_cci(_h, _l, _c)
-        df_clean["OBV"]        = calc_obv(_c, _v)
-        df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
-        df_clean["Volume_ROC"] = calc_volume_roc(_v)
-        df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
-        df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
-        df_clean["Amihud"]     = calc_amihud(_c, _v)
-        df_clean["MEC"]        = calc_mec(_c)
-        df_clean["CS_Spread"]      = calc_corwin_schultz(_h, _l)
-        df_clean["Daily_Range"]    = _h - _l
-
-        clean_selected = [c for c in selected_cols if c in df_clean.columns]
-        export_clean   = df_clean[clean_selected].copy()
-        export_clean.index.name = "Datetime" if is_intraday else "Date"
-        export_clean   = export_clean.reset_index()
-
-        excel_clean = BytesIO()
-        with pd.ExcelWriter(excel_clean, engine="openpyxl") as writer:
-            export_clean.to_excel(writer, index=False, sheet_name="Data")
-        excel_clean.seek(0)
-
-        file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
+        st.subheader("İndir - Seçili Veriler")
+        export_df = df[selected_cols].copy()
+        export_df.index.name = "Datetime" if is_intraday else "Date"
+        export_df = export_df.reset_index()
+        excel_buf = BytesIO()
+        with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
+            export_df.to_excel(writer, index=False, sheet_name="Data")
+        excel_buf.seek(0)
+        file_name = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}.xlsx"
         st.download_button(
-            label=f"📥 OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
-            data=excel_clean.getvalue(),
-            file_name=file_name_clean,
+            label=f"📥 Ham Veriler — {symbol.upper()} ({len(export_df):,} satır)",
+            data=excel_buf.getvalue(),
+            file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # 3. Excel: boş hücreli satırlar da çıkarılmış
-        df_clean2     = df_clean[clean_selected].dropna()
-        removed_nan   = len(df_clean) - len(df_clean2)
-        export_clean2 = df_clean2.copy()
-        export_clean2.index.name = "Datetime" if is_intraday else "Date"
-        export_clean2 = export_clean2.reset_index()
-
-        excel_clean2 = BytesIO()
-        with pd.ExcelWriter(excel_clean2, engine="openpyxl") as writer:
-            export_clean2.to_excel(writer, index=False, sheet_name="Data")
-        excel_clean2.seek(0)
-
-        file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
-        st.download_button(
-            label=f"📥 OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
-            data=excel_clean2.getvalue(),
-            file_name=file_name_clean2,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
-        dl_df   = df_clean2[clean_selected].copy()
-        epsilon = 1e-10
-
-        if "OBV" in dl_df.columns:
-            obv_diff = dl_df["OBV"].diff()
-            dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
-
-        if "Amihud" in dl_df.columns:
-            dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
-            dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
-
-        if "Volume" in dl_df.columns:
-            dl_df["Volume"] = np.log1p(dl_df["Volume"])
-
-        if "Volume_ROC" in dl_df.columns:
-            dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
-
-        if "CMF" in dl_df.columns:
-            dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
-
-        if "CS_Spread" in dl_df.columns:
-            dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
-
-        dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
-
-        export_dl = dl_df.copy()
-        export_dl.index.name = "Datetime" if is_intraday else "Date"
-        export_dl = export_dl.reset_index()
-
-        buf_dl = BytesIO()
-        with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
-            export_dl.to_excel(writer, index=False, sheet_name="Data")
-        buf_dl.seek(0)
-
-        st.download_button(
-            label=f"📥 Temizlenmiş ve Dönüştürülmüş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
-            data=buf_dl.getvalue(),
-            file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-        with st.expander("📋 Standart Dönüşüm Uygulamaları"):
-            st.markdown("""
-| Değişken | Uygulanan Dönüşüm | Gerekçe |
-|---|---|---|
-| **OBV** | `diff()` → `log1p(abs) × sign` | Kümülatif serinin farkı alınır; büyük değerler log ile sıkıştırılır, yön korunur |
-| **Amihud** | `replace(0, ε=1e-10)` → `log1p(x × 1e9)` | 1e-8 mertebesindeki çok küçük sayılar pozitif bölgeye taşınır, log1p ile ölçeklenir |
-| **Volume** | `log1p(x)` | Hacim dağılımı sağa çarpık; log dönüşümü ölçeği dengeler |
-| **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
-| **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
-| **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
-| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
-| **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
-
-> **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
-            """)
+        # OHLC eşit satır filtreleyip indikatörleri yeniden hesapla
+        ohlc_mask   = ~((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
+        df_clean    = df[ohlc_mask][["Open", "High", "Low", "Close", "Volume"]].copy()
+        removed_cnt = len(df) - len(df_clean)
+    
+        if not df_clean.empty:
+            _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]; _v = df_clean["Volume"]
+    
+            # Mevcut indikatörler
+            df_clean["EMA_20"]     = calc_ema(_c, 20)
+            df_clean["EMA_50"]     = calc_ema(_c, 50)
+            df_clean["EMA_200"]    = calc_ema(_c, 200)
+            df_clean["RSI"]        = calc_rsi(_c)
+            df_clean["MACD"]       = calc_macd(_c)[0]
+            df_clean["ATR"]        = calc_atr(_h, _l, _c)
+            df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
+            df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
+            df_clean["Return"]     = _c.pct_change()
+    
+            # Yeni indikatörler
+            df_clean["ROC"]        = calc_roc(_c)
+            df_clean["Stoch_K"], df_clean["Stoch_D"] = calc_stochastic(_h, _l, _c)
+            df_clean["ADX"]        = calc_adx(_h, _l, _c)
+            df_clean["Williams_R"] = calc_williams_r(_h, _l, _c)
+            df_clean["CCI"]        = calc_cci(_h, _l, _c)
+            df_clean["OBV"]        = calc_obv(_c, _v)
+            df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
+            df_clean["Volume_ROC"] = calc_volume_roc(_v)
+            df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
+            df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
+            df_clean["Amihud"]     = calc_amihud(_c, _v)
+            df_clean["MEC"]        = calc_mec(_c)
+            df_clean["CS_Spread"]      = calc_corwin_schultz(_h, _l)
+            df_clean["Daily_Range"]    = _h - _l
+    
+            clean_selected = [c for c in selected_cols if c in df_clean.columns]
+            export_clean   = df_clean[clean_selected].copy()
+            export_clean.index.name = "Datetime" if is_intraday else "Date"
+            export_clean   = export_clean.reset_index()
+    
+            excel_clean = BytesIO()
+            with pd.ExcelWriter(excel_clean, engine="openpyxl") as writer:
+                export_clean.to_excel(writer, index=False, sheet_name="Data")
+            excel_clean.seek(0)
+    
+            file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
+            st.download_button(
+                label=f"📥 OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
+                data=excel_clean.getvalue(),
+                file_name=file_name_clean,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+            # 3. Excel: boş hücreli satırlar da çıkarılmış
+            df_clean2     = df_clean[clean_selected].dropna()
+            removed_nan   = len(df_clean) - len(df_clean2)
+            export_clean2 = df_clean2.copy()
+            export_clean2.index.name = "Datetime" if is_intraday else "Date"
+            export_clean2 = export_clean2.reset_index()
+    
+            excel_clean2 = BytesIO()
+            with pd.ExcelWriter(excel_clean2, engine="openpyxl") as writer:
+                export_clean2.to_excel(writer, index=False, sheet_name="Data")
+            excel_clean2.seek(0)
+    
+            file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
+            st.download_button(
+                label=f"📥 OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
+                data=excel_clean2.getvalue(),
+                file_name=file_name_clean2,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+            # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
+            dl_df   = df_clean2[clean_selected].copy()
+            epsilon = 1e-10
+    
+            if "OBV" in dl_df.columns:
+                obv_diff = dl_df["OBV"].diff()
+                dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
+    
+            if "Amihud" in dl_df.columns:
+                dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
+                dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
+    
+            if "Volume" in dl_df.columns:
+                dl_df["Volume"] = np.log1p(dl_df["Volume"])
+    
+            if "Volume_ROC" in dl_df.columns:
+                dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
+    
+            if "CMF" in dl_df.columns:
+                dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
+    
+            if "CS_Spread" in dl_df.columns:
+                dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
+    
+            dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
+    
+            export_dl = dl_df.copy()
+            export_dl.index.name = "Datetime" if is_intraday else "Date"
+            export_dl = export_dl.reset_index()
+    
+            buf_dl = BytesIO()
+            with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
+                export_dl.to_excel(writer, index=False, sheet_name="Data")
+            buf_dl.seek(0)
+    
+            st.download_button(
+                label=f"📥 Temizlenmiş ve Dönüştürülmüş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
+                data=buf_dl.getvalue(),
+                file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+    
+            with st.expander("📋 Standart Dönüşüm Uygulamaları"):
+                st.markdown("""
+    | Değişken | Uygulanan Dönüşüm | Gerekçe |
+    |---|---|---|
+    | **OBV** | `diff()` → `log1p(abs) × sign` | Kümülatif serinin farkı alınır; büyük değerler log ile sıkıştırılır, yön korunur |
+    | **Amihud** | `replace(0, ε=1e-10)` → `log1p(x × 1e9)` | 1e-8 mertebesindeki çok küçük sayılar pozitif bölgeye taşınır, log1p ile ölçeklenir |
+    | **Volume** | `log1p(x)` | Hacim dağılımı sağa çarpık; log dönüşümü ölçeği dengeler |
+    | **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
+    | **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
+    | **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
+    | **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
+    | **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
+    
+    > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
+                """)
 
     with tab2:
 
