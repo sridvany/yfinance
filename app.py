@@ -1474,6 +1474,11 @@ if symbol:
                             if coint_bad:
                                 st.warning(f"Eşbütünleşik değil — OLS katsayısı sahte olabilir: `{'`, `'.join(coint_bad)}` — Bu feature'larla regresyon yerine fark alarak (Return) çalış")
 
+                            # Birleşik özet
+                            eg_coint_map = {r["Feature"]: r["Durum"] for r in eg_rows}
+                            st.session_state["coint_eg_map"]     = eg_coint_map
+                            st.session_state["coint_method_used"] = "EG"
+
                         else:
                             # ── Johansen ─────────────────────────────────
                             st.markdown("**Johansen Eşbütünleşme Testi** *(tüm feature'lar + Close birlikte)*")
@@ -1512,11 +1517,84 @@ if symbol:
                                 n_coint = sum(1 for r in trace_rows if r["Durum"].startswith("✅"))
                                 if n_coint > 0:
                                     st.success(f"**{n_coint} eşbütünleşme ilişkisi tespit edildi** — feature'lar ve Close arasında uzun vadeli gerçek ilişki var. OLS katsayıları güvenilir.")
+                                    st.session_state["coint_johansen_ok"] = True
                                 else:
                                     st.warning("Eşbütünleşme tespit edilmedi — OLS katsayıları sahte olabilir. Return modunda regresyon önerilir.")
+                                    st.session_state["coint_johansen_ok"] = False
+
+                                st.session_state["coint_method_used"] = "Johansen"
 
                             except Exception as e:
                                 st.error(f"Johansen testi hatası: {e}")
+
+                        # ── Birleşik Özet Tablo ───────────────────────
+                        if "reg_result" in st.session_state and st.session_state.get("reg_model_lbl", "").startswith("OLS + HAC (Newey"):
+                            st.markdown("---")
+                            st.markdown("#### 5️⃣ Birleşik Değerlendirme — OLS + Eşbütünleşme")
+                            st.caption("Tab3'teki OLS + HAC sonucu ile eşbütünleşme testi birleştirilerek her feature'ın güvenilirliği değerlendiriliyor.")
+
+                            model_fit_r     = st.session_state["reg_result"]
+                            feature_names_r = st.session_state["reg_features"]
+                            method_used     = st.session_state.get("coint_method_used", "")
+                            johansen_ok     = st.session_state.get("coint_johansen_ok", None)
+                            eg_map          = st.session_state.get("coint_eg_map", {})
+
+                            summary_rows = []
+                            for i, fname in enumerate(feature_names_r):
+                                if fname == "const":
+                                    continue
+                                # lag varsa orijinal adı bul
+                                base_name = fname.replace(f"_lag{st.session_state.get('reg_lag', 0)}", "") if "_lag" in fname else fname
+                                pval      = model_fit_r.pvalues[i]
+                                coef      = model_fit_r.params[i]
+                                anlamli   = pval < 0.05
+
+                                if method_used == "Johansen":
+                                    esb = "✅ Johansen" if johansen_ok else "❌ Johansen"
+                                elif method_used == "EG":
+                                    esb = eg_map.get(base_name, "—")
+                                else:
+                                    esb = "—"
+
+                                guvenilir = "✅ Güvenilir" if (anlamli and (johansen_ok or eg_map.get(base_name, "").startswith("✅"))) else \
+                                            "⚠️ Anlamlı değil" if not anlamli else \
+                                            "❌ Sahte olabilir"
+
+                                summary_rows.append({
+                                    "Feature":         fname,
+                                    "Katsayı":         round(coef, 6),
+                                    "p-değeri":        round(pval, 4),
+                                    "Anlamlı mı":      "✅" if anlamli else "❌",
+                                    "Eşbütünleşme":    esb,
+                                    "Sonuç":           guvenilir,
+                                })
+
+                            summary_df = pd.DataFrame(summary_rows)
+
+                            def _sum_color(val):
+                                if not isinstance(val, str): return ""
+                                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                if val.startswith("⚠️"): return "background-color:#fff3cd; color:#664d03"
+                                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                return ""
+
+                            st.dataframe(
+                                summary_df.style.map(_sum_color, subset=["Anlamlı mı", "Eşbütünleşme", "Sonuç"]),
+                                use_container_width=True, hide_index=True,
+                            )
+
+                            guvenilenler = [r["Feature"] for r in summary_rows if r["Sonuç"].startswith("✅")]
+                            sahte_olanlar = [r["Feature"] for r in summary_rows if r["Sonuç"].startswith("❌")]
+                            anlamsizlar  = [r["Feature"] for r in summary_rows if r["Sonuç"].startswith("⚠️")]
+
+                            if guvenilenler:
+                                st.success(f"**Hem anlamlı hem eşbütünleşik — güvenilir:** `{'`, `'.join(guvenilenler)}`")
+                            if anlamsizlar:
+                                st.warning(f"**Eşbütünleşik ama anlamsız — modelden çıkarılabilir:** `{'`, `'.join(anlamsizlar)}`")
+                            if sahte_olanlar:
+                                st.error(f"**Sahte regresyon riski — güvenilmez:** `{'`, `'.join(sahte_olanlar)}`")
+                        else:
+                            st.info("Birleşik değerlendirme için önce Tab3'te **OLS + HAC (Newey-West)** modelini çalıştırın.")
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
