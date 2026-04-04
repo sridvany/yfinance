@@ -1199,7 +1199,7 @@ if symbol:
                 else:
                     recommended = "OLS"
 
-                model_options = ["OLS", "OLS + HAC (Newey-West)", "OLS + HAC + Return (fark alınmış hedef)"]
+                model_options = ["OLS", "OLS + HAC (Newey-West)", "OLS + HAC + Return (fark alınmış hedef ve durağan olmayan feature'lar)"]
                 recommended_idx = {"OLS": 0, "OLS + HAC": 1, "OLS + HAC + Return": 2}[recommended]
 
                 st.info(f"Test sonuçlarına göre önerilen model: **{recommended}**")
@@ -1210,8 +1210,15 @@ if symbol:
                     key="reg_model",
                 )
 
+                # ── Lag seçimi ───────────────────────────────────
+                st.markdown("#### 3️⃣ Lag Seçimi")
+                st.caption("Feature'lara uygulanacak gecikme sayısı. 0 = lag yok. Hedef (target) laglanmaz.")
+                lag_n = st.slider("Lag sayısı", min_value=0, max_value=5, value=1, step=1, key="reg_lag")
+                if lag_n > 0:
+                    st.info(f"Tüm feature'lar **{lag_n} dönem** geriye kaydırılır — ilk {lag_n} satır düşer.")
+
                 # ── Regresyon Çalıştır ───────────────────────────
-                st.markdown("#### 3️⃣ Çalıştır")
+                st.markdown("#### 4️⃣ Çalıştır")
                 if st.button("▶ Regresyon Kur", key="reg_run"):
 
                     # Veri hazırla
@@ -1221,23 +1228,38 @@ if symbol:
                         "3 — Tam Temizlenmiş":       df_clean2[[c for c in reg_features + [reg_target] if c in df_clean2.columns]].dropna() if not df_clean2.empty else pd.DataFrame(),
                         "4 — Temizlenmiş ve Transforme Edilmiş": dl_df[[c for c in reg_features + [reg_target] if c in dl_df.columns]].dropna() if not dl_df.empty else pd.DataFrame(),
                     }
-                    reg_data = DATASETS_REG.get(reg_ds_key, pd.DataFrame())
+                    reg_data = DATASETS_REG.get(reg_ds_key, pd.DataFrame()).copy()
 
                     if reg_data.empty:
                         st.error("Seçilen veri seti boş.")
                     else:
-                        y = reg_data[reg_target].copy()
-                        X_cols = [c for c in reg_features if c in reg_data.columns]
+                        X_cols     = [c for c in reg_features if c in reg_data.columns]
+                        non_stat   = reg_res.get("non_stat", [])
+                        use_return = "Return" in selected_model
 
-                        # Return modu: hedefi farkla
-                        if "Return" in selected_model:
-                            y = y.pct_change().dropna()
-                            reg_data = reg_data.loc[y.index]
+                        # Return modu: hedef ve durağan olmayan feature'lar farklanır
+                        if use_return:
+                            reg_data[reg_target] = reg_data[reg_target].pct_change()
+                            for col in X_cols:
+                                if col in non_stat:
+                                    reg_data[col] = reg_data[col].pct_change()
 
-                        X = add_constant(reg_data[X_cols].values.astype(float))
+                        # Lag uygula
+                        if lag_n > 0:
+                            lagged_cols = {}
+                            for col in X_cols:
+                                lagged_cols[f"{col}_lag{lag_n}"] = reg_data[col].shift(lag_n)
+                            lagged_df   = pd.DataFrame(lagged_cols, index=reg_data.index)
+                            reg_data    = pd.concat([reg_data[[reg_target]], lagged_df], axis=1)
+                            X_cols      = list(lagged_df.columns)
+
+                        reg_data = reg_data.dropna()
+                        y        = reg_data[reg_target]
+                        X        = add_constant(reg_data[X_cols].values.astype(float))
                         feature_names = ["const"] + X_cols
 
                         try:
+
                             if "HAC" in selected_model:
                                 model_fit = OLS(y.values, X).fit(cov_type="HAC", cov_kwds={"maxlags": 5})
                             else:
@@ -1259,7 +1281,7 @@ if symbol:
                 model_lbl     = st.session_state["reg_model_lbl"]
 
                 st.markdown("---")
-                st.markdown(f"#### 4️⃣ Sonuçlar — {model_lbl}")
+                st.markdown(f"#### 5️⃣ Sonuçlar — {model_lbl}")
 
                 # ── Model özeti ──────────────────────────────────
                 col_a, col_b, col_c, col_d = st.columns(4)
