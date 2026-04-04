@@ -1072,7 +1072,7 @@ if symbol:
 **Tüm testler temiz.**
 
 - Klasik OLS regresyon doğrudan uygulanabilir
-- Makine öğrenmesi / Derin öğrenme doğrudan kullanılabilir
+- ML / Derin öğrenme doğrudan kullanılabilir — normallik, doğrusallık ve multicollinearity varsayımları zaten geçerli değil; durağanlık ve yapısal kararlılık da sağlandığından concept drift riski düşük
                         """)
                     else:
                         msg = "**Tespit edilen sorunlar ve öneriler:**\n\n"
@@ -1088,7 +1088,14 @@ if symbol:
                             msg += "- **Doğrusal değil** → Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumla. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir\n"
                         if any_cusum:
                             msg += "- **Yapısal kırılma var** → Rolling window veya zaman dilimine göre ayrı model kur\n"
-                        msg += "\n**ML / Derin öğrenme kullanacaksan:** Bu testlerin hiçbiri geçerli değil — doğrudan kullanabilirsin."
+                        msg += "\n**ML / Derin öğrenme kullanacaksan:**\n"
+                        msg += "- Normallik (JB), doğrusallık (RESET) ve multicollinearity (VIF) varsayımları geçerli değil — bu testleri görmezden gelebilirsin\n"
+                        if any_ns:
+                            msg += "- ⚠️ **Durağanlık (ADF) ML/DL için de kritik** — durağan olmayan veri concept drift ve overfitting riskini artırır; log-return almayı düşün\n"
+                        if any_cusum:
+                            msg += "- ⚠️ **Yapısal kırılma (CUSUM) ML/DL için de kritik** — eğitim/test dağılımı farklılaşır; rolling window ile eğit\n"
+                        if any_arch:
+                            msg += "- ℹ️ ARCH etkisi LSTM/Transformer gibi sequence modellerinde window boyutu seçimini etkileyebilir\n"
                         st.warning(msg)
 
                 # ── SONUÇ & EXCEL İNDİR ──────────────────────────
