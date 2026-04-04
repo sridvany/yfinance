@@ -761,24 +761,26 @@ if symbol:
                     arch_df      = pd.DataFrame(arch_rows)
                     arch_problem = arch_df[arch_df["Durum"].str.startswith("❌")]["Feature"].tolist()
 
-                    # ── JARQUE-BERA (Normallik) ───────────────────
+                    # ── JARQUE-BERA (Model Artıklarının Normalliği) ──
                     jb_rows = []
-                    for col in after_vif + [target]:
-                        series = ds[col].dropna()
-                        try:
-                            jb_stat, jb_pval, skew, kurt = jarque_bera(series)
-                            non_normal = jb_pval < 0.05
-                            jb_rows.append({
-                                "Feature":      col,
-                                "JB p-değeri":  round(jb_pval, 4),
-                                "Çarpıklık":    round(skew, 4),
-                                "Basıklık":     round(kurt, 4),
-                                "Durum":        "❌ Normal Değil" if non_normal else "✅ Normal",
-                            })
-                        except Exception:
-                            jb_rows.append({"Feature": col, "JB p-değeri": np.nan, "Çarpıklık": np.nan, "Basıklık": np.nan, "Durum": "⚠️ Hata"})
-                    jb_df      = pd.DataFrame(jb_rows)
-                    jb_problem = jb_df[jb_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+                    try:
+                        sub_jb   = ds[after_vif + [target]].dropna()
+                        X_jb     = add_constant(sub_jb[after_vif].values.astype(float))
+                        model_jb = OLS(sub_jb[target].values, X_jb).fit()
+                        jb_stat, jb_pval, skew, kurt = jarque_bera(model_jb.resid)
+                        non_normal = jb_pval < 0.05
+                        jb_rows.append({
+                            "Model":        f"OLS ({len(after_vif)} feature → {target})",
+                            "JB p-değeri":  round(jb_pval, 4),
+                            "Çarpıklık":    round(skew, 4),
+                            "Basıklık":     round(kurt, 4),
+                            "Durum":        "❌ Normal Değil" if non_normal else "✅ Normal",
+                        })
+                        jb_problem = [target] if non_normal else []
+                    except Exception:
+                        jb_rows.append({"Model": f"OLS ({len(after_vif)} feature → {target})", "JB p-değeri": np.nan, "Çarpıklık": np.nan, "Basıklık": np.nan, "Durum": "⚠️ Hata"})
+                        jb_problem = []
+                    jb_df = pd.DataFrame(jb_rows)
 
                     # ── RESET (Doğrusallık) ───────────────────────
                     reset_rows = []
@@ -934,7 +936,7 @@ if symbol:
                         if "jb_df" not in res:
                             st.info("6️⃣-8️⃣ testler için analizi yeniden çalıştırın.")
                         else:
-                            st.markdown("**6️⃣ Jarque-Bera Normallik Testi**")
+                            st.markdown("**6️⃣ Jarque-Bera Normallik Testi** *(model artıkları)*")
                             def _jbc(val):
                                 if not isinstance(val, str): return ""
                                 if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
@@ -944,11 +946,10 @@ if symbol:
                                 res["jb_df"].style.map(_jbc, subset=["Durum"]),
                                 use_container_width=True, hide_index=True,
                             )
-                            jb_feat = [f for f in res["jb_problem"] if f != target]
-                            if jb_feat:
-                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Durağan ve zayıf bağımlı serilerde zaman serisi CLT'si geçerlidir; ancak ADF/ARCH sorunları mevcutsa HAC standart hata olmadan normallik varsayımına dayanılamaz.")
+                            if res.get("jb_problem"):
+                                st.warning("Model artıkları normal dağılmıyor — Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz.")
                             else:
-                                st.success("Tüm değişkenler normal dağılıyor.")
+                                st.success("Model artıkları normal dağılıyor.")
 
                             st.markdown("**7️⃣ RESET Doğrusallık Testi**")
                             def _rc(val):
@@ -993,6 +994,7 @@ if symbol:
                     lb_pass    = res["lb_df"]["Durum"].str.startswith("✅").sum()
                     arch_pass  = res["arch_df"]["Durum"].str.startswith("✅").sum()
                     jb_pass    = res["jb_df"]["Durum"].str.startswith("✅").sum() if "jb_df" in res else "-"
+                    jb_total   = len(res["jb_df"]) if "jb_df" in res else "-"
                     reset_pass = res["reset_df"]["Durum"].str.startswith("✅").sum() if "reset_df" in res else "-"
                     reset_tot  = len(res["reset_df"]) if "reset_df" in res else "-"
                     cusum_pass = res["cusum_df"]["Durum"].str.startswith("✅").sum() if "cusum_df" in res else "-"
@@ -1004,7 +1006,7 @@ if symbol:
                         "ADF Geçen":          f"{adf_pass}/{adf_total}",
                         "LB Geçen":           f"{lb_pass}/{adf_total}",
                         "ARCH Geçen":         f"{arch_pass}/{adf_total}",
-                        "JB Geçen":           f"{jb_pass}/{adf_total}" if jb_pass != "-" else "-",
+                        "JB Geçen":           f"{jb_pass}/{jb_total}" if jb_pass != "-" else "-",
                         "RESET Geçen":        f"{reset_pass}/{reset_tot}" if reset_pass != "-" else "-",
                         "CUSUM Geçen":        f"{cusum_pass}/{adf_total}" if cusum_pass != "-" else "-",
                         "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
