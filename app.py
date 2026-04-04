@@ -1758,12 +1758,65 @@ if symbol:
 
                 # ── Artık Tanı Testleri ───────────────────────────
                 st.markdown("---")
-                st.markdown("#### Regresyon Varsayım Testleri — Model Artıkları")
-                st.caption("OLS varsayımları feature'lara değil, modelin artıklarına uygulanmalıdır.")
+                st.markdown("#### Regresyon Varsayım Testleri")
+
+                # ── Tablo 1: Feature Testleri ─────────────────────
+                st.markdown("**1️⃣ Feature Testleri — ADF & VIF**")
+                st.caption("Her feature için durağanlık ve çoklu doğrusallık.")
+
+                feat_diag_rows = []
+                final_feat_cols = [f for f in fn_final if f != "const"]
+
+                # ADF — Tab2 sonuçlarından çek
+                adf_source = reg_res.get("adf_df", pd.DataFrame())
+                adf_map    = {}
+                if not adf_source.empty:
+                    for _, row in adf_source.iterrows():
+                        adf_map[row["Feature"]] = row["Durum"]
+
+                # VIF — Tab2 sonuçlarından çek
+                vif_source = reg_res.get("vif_df", pd.DataFrame())
+                vif_map    = {}
+                if not vif_source.empty:
+                    for _, row in vif_source.iterrows():
+                        vif_map[row["Feature"]] = row["VIF"]
+
+                for col in final_feat_cols:
+                    base = col.replace(f"_lag{st.session_state.get('reg_lag', 0)}", "") if "_lag" in col else col
+                    adf_durum = adf_map.get(base, adf_map.get(col, "—"))
+                    vif_val   = vif_map.get(col, np.nan)
+                    vif_thr   = st.session_state.get("fs_vif_thr_used", 10.0)
+                    vif_durum = "✅ OK" if (not np.isnan(vif_val) and vif_val <= vif_thr) else ("❌ Yüksek" if not np.isnan(vif_val) else "⚠️ Hata")
+
+                    feat_diag_rows.append({
+                        "Feature": col,
+                        "ADF Durumu": adf_durum if adf_durum != "—" else "—",
+                        "VIF": vif_val if not np.isnan(vif_val) else "—",
+                        "VIF Durumu": vif_durum,
+                    })
+
+                feat_diag_df = pd.DataFrame(feat_diag_rows)
+
+                def _fd(val):
+                    if not isinstance(val, str): return ""
+                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                    if val.startswith("⚠️"): return "background-color:#fff3cd; color:#664d03"
+                    return ""
+
+                st.dataframe(
+                    feat_diag_df.style.map(_fd, subset=["ADF Durumu", "VIF Durumu"]),
+                    use_container_width=True, hide_index=True,
+                )
+
+                # ── Tablo 2: Artık Testleri ───────────────────────
+                st.markdown("**2️⃣ Artık Testleri — LB, ARCH, JB, RESET, CUSUM**")
+                st.caption("OLS varsayımları modelin artıklarına uygulanmalıdır.")
 
                 resid = final_fit.resid
                 X_res = final_fit.model.exog
                 diag_rows = []
+
 
                 # 1. Otokorelasyon — Ljung-Box
                 try:
