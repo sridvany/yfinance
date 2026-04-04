@@ -946,7 +946,7 @@ if symbol:
                             )
                             jb_feat = [f for f in res["jb_problem"] if f != target]
                             if jb_feat:
-                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Büyük örneklemde OLS dayanıklıdır; küçük örneklemde robust regresyon düşünülebilir.")
+                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL modeli önerilir.")
                             else:
                                 st.success("Tüm değişkenler normal dağılıyor.")
 
@@ -1053,7 +1053,7 @@ if symbol:
                         "❌ Sorun var" if any_arch  else "✅ Temiz",
                         "Volatilite tahmini → **GARCH**; getiri tahmini → OLS+HAC yeterli" if any_arch else "OLS varyans tahmini güvenilir",
                         "❌ Sorun var" if any_jb    else "✅ Temiz",
-                        "Büyük örneklemde OLS dayanıklıdır; küçük örneklemde robust regresyon düşünülebilir" if any_jb else "Normallik varsayımı sağlanıyor",
+                        "Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL önerilir" if any_jb else "Normallik varsayımı sağlanıyor",
                         "❌ Sorun var" if any_reset else "✅ Temiz",
                         "Polinom terim, etkileşim veya ML/DL modeli düşünülebilir" if any_reset else "Doğrusal model yeterli",
                         "❌ Sorun var" if any_cusum else "✅ Temiz",
@@ -1081,7 +1081,7 @@ if symbol:
                         if any_arch:
                             msg += "- **ARCH etkisi var** → Volatilite tahmini için GARCH; getiri tahmini için OLS+HAC yeterli\n"
                         if any_jb:
-                            msg += "- **Normal dağılmıyor** → Büyük örneklemde OLS dayanıklıdır; küçük örneklemde robust regresyon düşünülebilir\n"
+                            msg += "- **Normal dağılmıyor** → Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL modeli önerilir\n"
                         if any_reset:
                             msg += "- **Doğrusal değil** → Polinom terim ekle veya ML/DL modeline geç\n"
                         if any_cusum:
