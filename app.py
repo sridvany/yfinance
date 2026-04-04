@@ -1164,8 +1164,196 @@ if symbol:
         if "fs_results" not in st.session_state:
             st.info("Önce **Feature Analizi** sekmesinde analizi çalıştırın.")
         else:
-            st.caption("Feature analizi tamamlandı. Regresyon modeli kurulmaya hazır.")
-            st.info("🚧 Bu bölüm yakında eklenecek.")
+            fs_results    = st.session_state["fs_results"]
+            date_col_name = "Datetime" if is_intraday else "Date"
+
+            # ── Veri seti seç ────────────────────────────────────
+            st.markdown("#### 1️⃣ Veri Seti")
+            reg_ds_key = st.selectbox(
+                "Hangi veri seti üzerinde regresyon kurulsun?",
+                list(fs_results.keys()),
+                index=len(fs_results) - 1,
+                key="reg_ds_key",
+            )
+            reg_res      = fs_results[reg_ds_key]
+            reg_target   = st.session_state.get("fs_target", "Close")
+            reg_features = reg_res["after_vif"]
+
+            if not reg_features:
+                st.warning("Bu veri setinde hayatta kalan feature yok.")
+            else:
+                st.success(f"**Target:** `{reg_target}` — **Feature'lar ({len(reg_features)}):** `{'`, `'.join(reg_features)}`")
+
+                # ── Model seç ────────────────────────────────────
+                st.markdown("#### 2️⃣ Model Seçimi")
+
+                # Test sonuçlarına göre öneri
+                any_lb   = len(reg_res["lb_problem"]) > 0
+                any_arch = len(reg_res["arch_problem"]) > 0
+                any_ns   = len(reg_res["non_stat"]) > 0
+
+                if any_ns and (any_lb or any_arch):
+                    recommended = "OLS + HAC + Return"
+                elif any_lb or any_arch:
+                    recommended = "OLS + HAC"
+                else:
+                    recommended = "OLS"
+
+                model_options = ["OLS", "OLS + HAC (Newey-West)", "OLS + HAC + Return (fark alınmış hedef)"]
+                recommended_idx = {"OLS": 0, "OLS + HAC": 1, "OLS + HAC + Return": 2}[recommended]
+
+                st.info(f"Test sonuçlarına göre önerilen model: **{recommended}**")
+                selected_model = st.radio(
+                    "Model seçin:",
+                    model_options,
+                    index=recommended_idx,
+                    key="reg_model",
+                )
+
+                # ── Regresyon Çalıştır ───────────────────────────
+                st.markdown("#### 3️⃣ Çalıştır")
+                if st.button("▶ Regresyon Kur", key="reg_run"):
+
+                    # Veri hazırla
+                    DATASETS_REG = {
+                        "1 — Ham Veri":              df[[c for c in reg_features + [reg_target] if c in df.columns]].dropna(),
+                        "2 — OHLC Temizlenmiş":      df_clean[[c for c in reg_features + [reg_target] if c in df_clean.columns]].dropna() if not df_clean.empty else pd.DataFrame(),
+                        "3 — Tam Temizlenmiş":       df_clean2[[c for c in reg_features + [reg_target] if c in df_clean2.columns]].dropna() if not df_clean2.empty else pd.DataFrame(),
+                        "4 — Temizlenmiş ve Transforme Edilmiş": dl_df[[c for c in reg_features + [reg_target] if c in dl_df.columns]].dropna() if not dl_df.empty else pd.DataFrame(),
+                    }
+                    reg_data = DATASETS_REG.get(reg_ds_key, pd.DataFrame())
+
+                    if reg_data.empty:
+                        st.error("Seçilen veri seti boş.")
+                    else:
+                        y = reg_data[reg_target].copy()
+                        X_cols = [c for c in reg_features if c in reg_data.columns]
+
+                        # Return modu: hedefi farkla
+                        if "Return" in selected_model:
+                            y = y.pct_change().dropna()
+                            reg_data = reg_data.loc[y.index]
+
+                        X = add_constant(reg_data[X_cols].values.astype(float))
+                        feature_names = ["const"] + X_cols
+
+                        try:
+                            if "HAC" in selected_model:
+                                model_fit = OLS(y.values, X).fit(cov_type="HAC", cov_kwds={"maxlags": 5})
+                            else:
+                                model_fit = OLS(y.values, X).fit()
+
+                            st.session_state["reg_result"]   = model_fit
+                            st.session_state["reg_features"] = feature_names
+                            st.session_state["reg_y"]        = y
+                            st.session_state["reg_model_lbl"] = selected_model
+
+                        except Exception as e:
+                            st.error(f"Model hatası: {e}")
+
+            # ── Sonuçlar ─────────────────────────────────────────
+            if "reg_result" in st.session_state:
+                model_fit     = st.session_state["reg_result"]
+                feature_names = st.session_state["reg_features"]
+                y             = st.session_state["reg_y"]
+                model_lbl     = st.session_state["reg_model_lbl"]
+
+                st.markdown("---")
+                st.markdown(f"#### 4️⃣ Sonuçlar — {model_lbl}")
+
+                # ── Model özeti ──────────────────────────────────
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric("R²",          f"{model_fit.rsquared:.4f}")
+                col_b.metric("Adj. R²",     f"{model_fit.rsquared_adj:.4f}")
+                col_c.metric("AIC",         f"{model_fit.aic:.2f}")
+                col_d.metric("BIC",         f"{model_fit.bic:.2f}")
+
+                col_e, col_f = st.columns(2)
+                col_e.metric("F-istatistiği", f"{model_fit.fvalue:.4f}")
+                col_f.metric("F p-değeri",    f"{model_fit.f_pvalue:.4f}")
+
+                # ── Katsayılar tablosu ───────────────────────────
+                st.markdown("**Katsayılar**")
+                coef_rows = []
+                for i, name in enumerate(feature_names):
+                    pval    = model_fit.pvalues[i]
+                    sig     = "✅ Anlamlı" if pval < 0.05 else ("⚠️ Sınırda" if pval < 0.10 else "❌ Anlamsız")
+                    coef_rows.append({
+                        "Feature":     name,
+                        "Katsayı":     round(model_fit.params[i], 6),
+                        "Std Hata":    round(model_fit.bse[i], 6),
+                        "t-istatistiği": round(model_fit.tvalues[i], 4),
+                        "p-değeri":    round(pval, 4),
+                        "Anlamlılık":  sig,
+                    })
+                coef_df = pd.DataFrame(coef_rows)
+
+                def _sig_color(val):
+                    if not isinstance(val, str): return ""
+                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                    if val.startswith("⚠️"): return "background-color:#fff3cd; color:#664d03"
+                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                    return ""
+
+                st.dataframe(
+                    coef_df.style
+                        .format({"Katsayı": "{:.6f}", "Std Hata": "{:.6f}", "t-istatistiği": "{:.4f}", "p-değeri": "{:.4f}"})
+                        .map(_sig_color, subset=["Anlamlılık"]),
+                    use_container_width=True, hide_index=True,
+                )
+
+                # ── Artık Grafiği ────────────────────────────────
+                st.markdown("**Artık Grafiği (Residuals)**")
+                resid = model_fit.resid
+                fig_resid = go.Figure()
+                fig_resid.add_trace(go.Scatter(
+                    x=list(range(len(resid))), y=resid,
+                    mode="lines", line=dict(color="#0d6efd", width=1),
+                    name="Artık"
+                ))
+                fig_resid.add_hline(y=0, line_dash="dash", line_color="red")
+                fig_resid.update_layout(
+                    height=300, margin=dict(l=40, r=20, t=30, b=40),
+                    xaxis_title="Gözlem", yaxis_title="Artık",
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fig_resid, use_container_width=True)
+
+                # ── Q-Q Plot ─────────────────────────────────────
+                st.markdown("**Q-Q Plot (Normallik)**")
+                (osm, osr), (slope, intercept, _) = stats.probplot(resid)
+                fig_qq = go.Figure()
+                fig_qq.add_trace(go.Scatter(
+                    x=osm, y=osr,
+                    mode="markers", marker=dict(color="#0d6efd", size=4),
+                    name="Artıklar"
+                ))
+                fig_qq.add_trace(go.Scatter(
+                    x=osm, y=[slope * x + intercept for x in osm],
+                    mode="lines", line=dict(color="red", dash="dash"),
+                    name="Normal Çizgi"
+                ))
+                fig_qq.update_layout(
+                    height=300, margin=dict(l=40, r=20, t=30, b=40),
+                    xaxis_title="Teorik Kantiller", yaxis_title="Örnek Kantiller",
+                )
+                st.plotly_chart(fig_qq, use_container_width=True)
+
+                # ── Yorum ────────────────────────────────────────
+                st.markdown("**Yorum**")
+                sig_features = [r["Feature"] for r in coef_rows if r["Anlamlılık"].startswith("✅") and r["Feature"] != "const"]
+                insig_features = [r["Feature"] for r in coef_rows if r["Anlamlılık"].startswith("❌") and r["Feature"] != "const"]
+
+                if sig_features:
+                    st.success(f"İstatistiksel olarak anlamlı feature'lar: `{'`, `'.join(sig_features)}`")
+                if insig_features:
+                    st.warning(f"Anlamsız feature'lar (p > 0.05): `{'`, `'.join(insig_features)}` — modelden çıkarılabilir")
+                if model_fit.rsquared < 0.1:
+                    st.warning(f"R² = {model_fit.rsquared:.4f} — Model açıklama gücü düşük. Doğrusal ilişki zayıf olabilir.")
+                elif model_fit.rsquared > 0.9:
+                    st.warning(f"R² = {model_fit.rsquared:.4f} — Çok yüksek R² multicollinearity veya overfitting işareti olabilir.")
+                else:
+                    st.info(f"R² = {model_fit.rsquared:.4f}")
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
