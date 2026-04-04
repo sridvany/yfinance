@@ -946,7 +946,7 @@ if symbol:
                             )
                             jb_feat = [f for f in res["jb_problem"] if f != target]
                             if jb_feat:
-                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL modeli önerilir.")
+                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Durağan ve zayıf bağımlı serilerde zaman serisi CLT'si geçerlidir; ancak ADF/ARCH sorunları mevcutsa HAC standart hata olmadan normallik varsayımına dayanılamaz.")
                             else:
                                 st.success("Tüm değişkenler normal dağılıyor.")
 
@@ -1053,7 +1053,7 @@ if symbol:
                         "❌ Sorun var" if any_arch  else "✅ Temiz",
                         "Volatilite tahmini → **GARCH**; getiri tahmini → OLS+HAC yeterli" if any_arch else "OLS varyans tahmini güvenilir",
                         "❌ Sorun var" if any_jb    else "✅ Temiz",
-                        "Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL önerilir" if any_jb else "Normallik varsayımı sağlanıyor",
+                        "Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz" if any_jb else "Normallik varsayımı sağlanıyor",
                         "❌ Sorun var" if any_reset else "✅ Temiz",
                         "Polinom terim, etkileşim veya ML/DL modeli düşünülebilir" if any_reset else "Doğrusal model yeterli",
                         "❌ Sorun var" if any_cusum else "✅ Temiz",
@@ -1081,7 +1081,7 @@ if symbol:
                         if any_arch:
                             msg += "- **ARCH etkisi var** → Volatilite tahmini için GARCH; getiri tahmini için OLS+HAC yeterli\n"
                         if any_jb:
-                            msg += "- **Normal dağılmıyor** → Zaman serilerinde MLT geçerli değil; robust regresyon veya ML/DL modeli önerilir\n"
+                            msg += "- **Normal dağılmıyor** → Durağan/zayıf bağımlı serilerde CLT geçerlidir; bu veri setinde ADF/ARCH sorunları da mevcutsa OLS + HAC kullan\n"
                         if any_reset:
                             msg += "- **Doğrusal değil** → Polinom terim ekle veya ML/DL modeline geç\n"
                         if any_cusum:
