@@ -1756,5 +1756,98 @@ if symbol:
                     else:
                         st.info("Tam modelin AIC'i daha düşük — çıkarılan feature'lar bilgi taşıyor olabilir.")
 
+                # ── Artık Tanı Testleri ───────────────────────────
+                st.markdown("---")
+                st.markdown("#### Regresyon Varsayım Testleri — Model Artıkları")
+                st.caption("OLS varsayımları feature'lara değil, modelin artıklarına uygulanmalıdır.")
+
+                resid = final_fit.resid
+                X_res = final_fit.model.exog
+                diag_rows = []
+
+                # 1. Otokorelasyon — Ljung-Box
+                try:
+                    lb = acorr_ljungbox(resid, lags=[10], return_df=True)
+                    lb_p = float(lb["lb_pvalue"].iloc[0])
+                    diag_rows.append({
+                        "Test": "Ljung-Box (Otokorelasyon)",
+                        "p-değeri": round(lb_p, 4),
+                        "Durum": "❌ Otokorelasyon Var" if lb_p < 0.05 else "✅ Otokorelasyon Yok",
+                        "OLS Etkisi": "Standart hatalar yanlış → HAC uygulandı ✅" if lb_p < 0.05 else "Standart OLS güvenilir",
+                    })
+                except:
+                    diag_rows.append({"Test": "Ljung-Box", "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Etkisi": ""})
+
+                # 2. Heteroskedasticity — ARCH
+                try:
+                    _, arch_p, _, _ = het_arch(resid, nlags=5)
+                    diag_rows.append({
+                        "Test": "ARCH (Heteroskedasticity)",
+                        "p-değeri": round(arch_p, 4),
+                        "Durum": "❌ ARCH Etkisi Var" if arch_p < 0.05 else "✅ ARCH Etkisi Yok",
+                        "OLS Etkisi": "Varyans sabit değil → HAC kısmen yönetir" if arch_p < 0.05 else "OLS varyans tahmini güvenilir",
+                    })
+                except:
+                    diag_rows.append({"Test": "ARCH", "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Etkisi": ""})
+
+                # 3. Normallik — Jarque-Bera
+                try:
+                    jb_s, jb_p, skew, kurt = jarque_bera(resid)
+                    diag_rows.append({
+                        "Test": "Jarque-Bera (Normallik)",
+                        "p-değeri": round(jb_p, 4),
+                        "Durum": "❌ Normal Değil" if jb_p < 0.05 else "✅ Normal",
+                        "OLS Etkisi": f"Çarpıklık={round(skew,2)}, Basıklık={round(kurt,2)} — Durağan serilerde CLT geçerli, HAC ile yönetilir" if jb_p < 0.05 else "Normallik sağlandı",
+                    })
+                except:
+                    diag_rows.append({"Test": "Jarque-Bera", "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Etkisi": ""})
+
+                # 4. Doğrusallık — RESET
+                try:
+                    rst   = linear_reset(final_fit, power=2, use_f=True)
+                    rst_p = rst.pvalue
+                    diag_rows.append({
+                        "Test": "RESET (Doğrusallık)",
+                        "p-değeri": round(rst_p, 4),
+                        "Durum": "❌ Doğrusal Değil" if rst_p < 0.05 else "✅ Doğrusal",
+                        "OLS Etkisi": "Finansal serilerde beklenen — katsayılar yaklaşık yorumlanmalı" if rst_p < 0.05 else "Doğrusallık sağlandı",
+                    })
+                except:
+                    diag_rows.append({"Test": "RESET", "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Etkisi": ""})
+
+                # 5. Yapısal Kırılma — CUSUM
+                try:
+                    _, cusum_p, _ = breaks_cusumolsresid(resid)
+                    diag_rows.append({
+                        "Test": "CUSUM (Yapısal Kırılma)",
+                        "p-değeri": round(cusum_p, 4),
+                        "Durum": "❌ Yapısal Kırılma Var" if cusum_p < 0.05 else "✅ Stabil",
+                        "OLS Etkisi": "Katsayılar zaman içinde değişiyor → rolling window düşünülebilir" if cusum_p < 0.05 else "Katsayılar stabil",
+                    })
+                except:
+                    diag_rows.append({"Test": "CUSUM", "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Etkisi": ""})
+
+                diag_df = pd.DataFrame(diag_rows)
+
+                def _dc(val):
+                    if not isinstance(val, str): return ""
+                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                    return ""
+
+                st.dataframe(
+                    diag_df.style.map(_dc, subset=["Durum"]),
+                    use_container_width=True, hide_index=True,
+                )
+
+                passed = sum(1 for r in diag_rows if r["Durum"].startswith("✅"))
+                total  = len(diag_rows)
+                if passed == total:
+                    st.success(f"Tüm {total} varsayım sağlandı — model güvenilir.")
+                elif passed >= 3:
+                    st.info(f"{passed}/{total} varsayım sağlandı — model büyük ölçüde güvenilir, HAC ile yönetilen sorunlar var.")
+                else:
+                    st.warning(f"{passed}/{total} varsayım sağlandı — model yorumlanırken dikkatli olunmalı.")
+
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
