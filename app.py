@@ -962,7 +962,7 @@ if symbol:
                             )
                             reset_feat = res["reset_problem"]
                             if reset_feat:
-                                st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Polinom terim, etkileşim veya ML modeli düşünülebilir.")
+                                st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir.")
                             else:
                                 st.success("Tüm feature-target ilişkileri doğrusal.")
 
@@ -1055,7 +1055,7 @@ if symbol:
                         "❌ Sorun var" if any_jb    else "✅ Temiz",
                         "Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz" if any_jb else "Normallik varsayımı sağlanıyor",
                         "❌ Sorun var" if any_reset else "✅ Temiz",
-                        "Polinom terim, etkileşim veya ML/DL modeli düşünülebilir" if any_reset else "Doğrusal model yeterli",
+                        "Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS ile devam edilebilir ancak katsayılar yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir" if any_reset else "Doğrusal model yeterli",
                         "❌ Sorun var" if any_cusum else "✅ Temiz",
                         "Rolling window veya zaman dilimlerine göre ayrı model kurulabilir" if any_cusum else "Katsayılar zaman içinde stabil",
                     ))
@@ -1083,7 +1083,7 @@ if symbol:
                         if any_jb:
                             msg += "- **Normal dağılmıyor** → Durağan/zayıf bağımlı serilerde CLT geçerlidir; bu veri setinde ADF/ARCH sorunları da mevcutsa OLS + HAC kullan\n"
                         if any_reset:
-                            msg += "- **Doğrusal değil** → Polinom terim ekle veya ML/DL modeline geç\n"
+                            msg += "- **Doğrusal değil** → Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumla. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir\n"
                         if any_cusum:
                             msg += "- **Yapısal kırılma var** → Rolling window veya zaman dilimine göre ayrı model kur\n"
                         msg += "\n**ML / Derin öğrenme kullanacaksan:** Bu testlerin hiçbiri geçerli değil — doğrudan kullanabilirsin."
