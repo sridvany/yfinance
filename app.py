@@ -408,11 +408,21 @@ if symbol:
         st.stop()
 
     # ============================================================
-    # Kapanış Grafiği
+    # SEKMELER
     # ============================================================
 
-    if "Close" in df.columns:
-        st.subheader("Kapanış Grafiği")
+    # Tab1'de tanımlanacak değişkenler için varsayılan
+    clean_selected = []
+    df_clean2      = pd.DataFrame()
+    dl_df          = pd.DataFrame()
+
+    tab1, tab2, tab3 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "📈 Regresyon"])
+
+    with tab1:
+
+        # ── Kapanış Grafiği ──────────────────────────────────────
+        if "Close" in df.columns:
+            st.subheader("Kapanış Grafiği")
         fig_px = go.Figure()
         fig_px.add_trace(go.Scatter(
             x=df.index, y=df["Close"],
@@ -595,558 +605,567 @@ if symbol:
 > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
             """)
 
-
+    with tab2:
 
         # ============================================================
         # FEATURE SEÇİM ANALİZİ
         # ============================================================
 
-        st.divider()
-        st.subheader("🔬 Feature Seçim Analizi")
-        st.caption(
-            "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF → Ljung-Box → ARCH analizleri çalıştırılır. "
-            "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
-        )
-
-        target        = "Close"
-        date_col_name = "Datetime" if is_intraday else "Date"
-
-        DATASETS = {
-            "1 — Ham Veri":              df[[c for c in clean_selected if c in df.columns]].dropna(),
-            "2 — OHLC Temizlenmiş":      df_clean[clean_selected].dropna(),
-            "3 — Tam Temizlenmiş":       df_clean2[clean_selected],
-            "4 — Temizlenmiş ve Transforme Edilmiş": dl_df,
-        }
-
-        numeric_cols  = [c for c in clean_selected if pd.api.types.is_numeric_dtype(df[c])]
-        default_idx   = numeric_cols.index("Close") if "Close" in numeric_cols else 0
-        target        = st.selectbox("🎯 Hedef Değişken (Target)", numeric_cols, index=default_idx, key="fs_target")
-
-        dataset_options   = list(DATASETS.keys())
-        selected_datasets = st.multiselect(
-            "Analiz edilecek veri setlerini seçin:",
-            dataset_options,
-            default=dataset_options,
-            key="fs_ds_select",
-        )
-
-        if not selected_datasets:
-            st.info("En az bir veri seti seçin.")
+        if not clean_selected:
+            st.info("Önce **Veri İndir** sekmesinde veri yükleyin.")
         else:
-            col_p1, col_p2, col_p3 = st.columns(3)
-            with col_p1:
-                corr_low_thr  = st.slider("Düşük |ρ| eşiği — altı çıkar",  0.05, 0.30,  0.15, 0.01,   key="fs_corr_low")
-            with col_p2:
-                corr_high_thr = st.slider("Yüksek |ρ| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
-            with col_p3:
-                vif_thr       = st.slider("VIF eşiği — üstü çıkar",         5.0, 20.0,  10.0, 0.5,    key="fs_vif_thr")
-
-            if st.button("▶ Tümünü Çalıştır", key="fs_run_all"):
-                fs_results = {}
-                for ds_name in selected_datasets:
-                    ds = DATASETS[ds_name].copy()
-                    if target not in ds.columns:
-                        continue
-                    candidates = [
-                        c for c in ds.columns
-                        if pd.api.types.is_numeric_dtype(ds[c]) and c != target
-                    ]
-                    sub = ds[candidates + [target]].dropna()
-
-                    # ── KORELASYON ──────────────────────────────
-                    corr_vals = sub[candidates].apply(
-                        lambda col: stats.spearmanr(col, sub[target])[0]
-                    ).abs()
-                    low_list  = corr_vals[corr_vals < corr_low_thr].index.tolist()
-                    fm        = sub[candidates].corr(method="spearman").abs()
-                    upper     = fm.where(np.triu(np.ones(fm.shape), k=1).astype(bool))
-                    high_list = []
-                    for col in upper.columns:
-                        partners = upper.index[upper[col] > corr_high_thr].tolist()
-                        for p in partners:
-                            drop = p if corr_vals.get(p, 0) <= corr_vals.get(col, 0) else col
-                            if drop not in high_list and drop not in low_list:
-                                high_list.append(drop)
-                    corr_remove = list(set(low_list + high_list))
-                    after_corr  = [f for f in candidates if f not in corr_remove]
-                    corr_tbl    = corr_vals.reset_index()
-                    corr_tbl.columns = ["Feature", "|ρ| ile Close"]
-                    corr_tbl = corr_tbl.sort_values("|ρ| ile Close", ascending=False)
-
-                    # ── VIF (iterative elimination) ──────────────
-                    remaining = after_corr.copy()
-                    vif_rem   = []
-                    while True:
+            st.caption(
+                "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF → Ljung-Box → ARCH analizleri çalıştırılır. "
+                "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
+            )
+    
+            target        = "Close"
+            date_col_name = "Datetime" if is_intraday else "Date"
+    
+            DATASETS = {
+                "1 — Ham Veri":              df[[c for c in clean_selected if c in df.columns]].dropna(),
+                "2 — OHLC Temizlenmiş":      df_clean[clean_selected].dropna(),
+                "3 — Tam Temizlenmiş":       df_clean2[clean_selected],
+                "4 — Temizlenmiş ve Transforme Edilmiş": dl_df,
+            }
+    
+            numeric_cols  = [c for c in clean_selected if pd.api.types.is_numeric_dtype(df[c])]
+            default_idx   = numeric_cols.index("Close") if "Close" in numeric_cols else 0
+            target        = st.selectbox("🎯 Hedef Değişken (Target)", numeric_cols, index=default_idx, key="fs_target")
+    
+            dataset_options   = list(DATASETS.keys())
+            selected_datasets = st.multiselect(
+                "Analiz edilecek veri setlerini seçin:",
+                dataset_options,
+                default=dataset_options,
+                key="fs_ds_select",
+            )
+    
+            if not selected_datasets:
+                st.info("En az bir veri seti seçin.")
+            else:
+                col_p1, col_p2, col_p3 = st.columns(3)
+                with col_p1:
+                    corr_low_thr  = st.slider("Düşük |ρ| eşiği — altı çıkar",  0.05, 0.30,  0.15, 0.01,   key="fs_corr_low")
+                with col_p2:
+                    corr_high_thr = st.slider("Yüksek |ρ| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
+                with col_p3:
+                    vif_thr       = st.slider("VIF eşiği — üstü çıkar",         5.0, 20.0,  10.0, 0.5,    key="fs_vif_thr")
+    
+                if st.button("▶ Tümünü Çalıştır", key="fs_run_all"):
+                    fs_results = {}
+                    for ds_name in selected_datasets:
+                        ds = DATASETS[ds_name].copy()
+                        if target not in ds.columns:
+                            continue
+                        candidates = [
+                            c for c in ds.columns
+                            if pd.api.types.is_numeric_dtype(ds[c]) and c != target
+                        ]
+                        sub = ds[candidates + [target]].dropna()
+    
+                        # ── KORELASYON ──────────────────────────────
+                        corr_vals = sub[candidates].apply(
+                            lambda col: stats.spearmanr(col, sub[target])[0]
+                        ).abs()
+                        low_list  = corr_vals[corr_vals < corr_low_thr].index.tolist()
+                        fm        = sub[candidates].corr(method="spearman").abs()
+                        upper     = fm.where(np.triu(np.ones(fm.shape), k=1).astype(bool))
+                        high_list = []
+                        for col in upper.columns:
+                            partners = upper.index[upper[col] > corr_high_thr].tolist()
+                            for p in partners:
+                                drop = p if corr_vals.get(p, 0) <= corr_vals.get(col, 0) else col
+                                if drop not in high_list and drop not in low_list:
+                                    high_list.append(drop)
+                        corr_remove = list(set(low_list + high_list))
+                        after_corr  = [f for f in candidates if f not in corr_remove]
+                        corr_tbl    = corr_vals.reset_index()
+                        corr_tbl.columns = ["Feature", "|ρ| ile Close"]
+                        corr_tbl = corr_tbl.sort_values("|ρ| ile Close", ascending=False)
+    
+                        # ── VIF (iterative elimination) ──────────────
+                        remaining = after_corr.copy()
+                        vif_rem   = []
+                        while True:
+                            sub_vif = sub[remaining].dropna()
+                            X       = sub_vif.values.astype(float)
+                            vif_vals = {}
+                            for i, col in enumerate(remaining):
+                                try:
+                                    vif_vals[col] = variance_inflation_factor(X, i)
+                                except Exception:
+                                    vif_vals[col] = np.nan
+                            max_col = max(vif_vals, key=lambda c: vif_vals[c] if not np.isnan(vif_vals[c]) else 0)
+                            if vif_vals[max_col] > vif_thr:
+                                vif_rem.append(max_col)
+                                remaining.remove(max_col)
+                            else:
+                                break
+                        # Son turu tablo için sakla
                         sub_vif = sub[remaining].dropna()
                         X       = sub_vif.values.astype(float)
-                        vif_vals = {}
+                        vif_rows = []
                         for i, col in enumerate(remaining):
                             try:
-                                vif_vals[col] = variance_inflation_factor(X, i)
+                                v = variance_inflation_factor(X, i)
                             except Exception:
-                                vif_vals[col] = np.nan
-                        max_col = max(vif_vals, key=lambda c: vif_vals[c] if not np.isnan(vif_vals[c]) else 0)
-                        if vif_vals[max_col] > vif_thr:
-                            vif_rem.append(max_col)
-                            remaining.remove(max_col)
-                        else:
-                            break
-                    # Son turu tablo için sakla
-                    sub_vif = sub[remaining].dropna()
-                    X       = sub_vif.values.astype(float)
-                    vif_rows = []
-                    for i, col in enumerate(remaining):
+                                v = np.nan
+                            vif_rows.append({"Feature": col, "VIF": round(v, 2)})
+                        vif_df    = pd.DataFrame(vif_rows).sort_values("VIF", ascending=False)
+                        after_vif = remaining
+    
+                        # ── ADF ─────────────────────────────────────
+                        adf_rows = []
+                        for col in after_vif + [target]:
+                            series = ds[col].dropna()
+                            try:
+                                stat, pval, _, _, crit, _ = adfuller(series, autolag="AIC")
+                                stationary = pval < 0.05
+                                adf_rows.append({
+                                    "Feature":         col,
+                                    "ADF İstatistiği": round(stat, 4),
+                                    "p-değeri":        round(pval, 4),
+                                    "Kritik (%5)":     round(crit["5%"], 4),
+                                    "Durum":           "✅ Durağan" if stationary else "❌ Durağan Değil",
+                                })
+                            except Exception:
+                                adf_rows.append({
+                                    "Feature": col, "ADF İstatistiği": np.nan,
+                                    "p-değeri": np.nan, "Kritik (%5)": np.nan, "Durum": "⚠️ Hata",
+                                })
+                        adf_df   = pd.DataFrame(adf_rows)
+                        non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
+    
+                        # ── LJUNG-BOX (Otokorelasyon) ────────────────
+                        lb_rows = []
+                        for col in after_vif + [target]:
+                            series = ds[col].dropna()
+                            try:
+                                lb_result = acorr_ljungbox(series, lags=[10], return_df=True)
+                                pval      = float(lb_result["lb_pvalue"].iloc[0])
+                                has_ac    = pval < 0.05
+                                lb_rows.append({
+                                    "Feature":     col,
+                                    "LB p-değeri": round(pval, 4),
+                                    "Durum":       "❌ Otokorelasyon Var" if has_ac else "✅ Otokorelasyon Yok",
+                                })
+                            except Exception:
+                                lb_rows.append({"Feature": col, "LB p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                        lb_df      = pd.DataFrame(lb_rows)
+                        lb_problem = lb_df[lb_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+    
+                        # ── ARCH (Heteroskedasticity) ─────────────────
+                        arch_rows = []
+                        for col in after_vif + [target]:
+                            series = ds[col].dropna()
+                            try:
+                                _, pval, _, _ = het_arch(series, nlags=5)
+                                has_arch      = pval < 0.05
+                                arch_rows.append({
+                                    "Feature":       col,
+                                    "ARCH p-değeri": round(pval, 4),
+                                    "Durum":         "❌ ARCH Etkisi Var" if has_arch else "✅ ARCH Etkisi Yok",
+                                })
+                            except Exception:
+                                arch_rows.append({"Feature": col, "ARCH p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                        arch_df      = pd.DataFrame(arch_rows)
+                        arch_problem = arch_df[arch_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+    
+                        # ── JARQUE-BERA (Model Artıklarının Normalliği) ──
+                        jb_rows = []
                         try:
-                            v = variance_inflation_factor(X, i)
-                        except Exception:
-                            v = np.nan
-                        vif_rows.append({"Feature": col, "VIF": round(v, 2)})
-                    vif_df    = pd.DataFrame(vif_rows).sort_values("VIF", ascending=False)
-                    after_vif = remaining
-
-                    # ── ADF ─────────────────────────────────────
-                    adf_rows = []
-                    for col in after_vif + [target]:
-                        series = ds[col].dropna()
-                        try:
-                            stat, pval, _, _, crit, _ = adfuller(series, autolag="AIC")
-                            stationary = pval < 0.05
-                            adf_rows.append({
-                                "Feature":         col,
-                                "ADF İstatistiği": round(stat, 4),
-                                "p-değeri":        round(pval, 4),
-                                "Kritik (%5)":     round(crit["5%"], 4),
-                                "Durum":           "✅ Durağan" if stationary else "❌ Durağan Değil",
+                            sub_jb   = ds[after_vif + [target]].dropna()
+                            X_jb     = add_constant(sub_jb[after_vif].values.astype(float))
+                            model_jb = OLS(sub_jb[target].values, X_jb).fit()
+                            jb_stat, jb_pval, skew, kurt = jarque_bera(model_jb.resid)
+                            non_normal = jb_pval < 0.05
+                            jb_rows.append({
+                                "Model":        f"OLS ({len(after_vif)} feature → {target})",
+                                "JB p-değeri":  round(jb_pval, 4),
+                                "Çarpıklık":    round(skew, 4),
+                                "Basıklık":     round(kurt, 4),
+                                "Durum":        "❌ Normal Değil" if non_normal else "✅ Normal",
                             })
+                            jb_problem = [target] if non_normal else []
                         except Exception:
-                            adf_rows.append({
-                                "Feature": col, "ADF İstatistiği": np.nan,
-                                "p-değeri": np.nan, "Kritik (%5)": np.nan, "Durum": "⚠️ Hata",
-                            })
-                    adf_df   = pd.DataFrame(adf_rows)
-                    non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
-
-                    # ── LJUNG-BOX (Otokorelasyon) ────────────────
-                    lb_rows = []
-                    for col in after_vif + [target]:
-                        series = ds[col].dropna()
-                        try:
-                            lb_result = acorr_ljungbox(series, lags=[10], return_df=True)
-                            pval      = float(lb_result["lb_pvalue"].iloc[0])
-                            has_ac    = pval < 0.05
-                            lb_rows.append({
-                                "Feature":     col,
-                                "LB p-değeri": round(pval, 4),
-                                "Durum":       "❌ Otokorelasyon Var" if has_ac else "✅ Otokorelasyon Yok",
-                            })
-                        except Exception:
-                            lb_rows.append({"Feature": col, "LB p-değeri": np.nan, "Durum": "⚠️ Hata"})
-                    lb_df      = pd.DataFrame(lb_rows)
-                    lb_problem = lb_df[lb_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-
-                    # ── ARCH (Heteroskedasticity) ─────────────────
-                    arch_rows = []
-                    for col in after_vif + [target]:
-                        series = ds[col].dropna()
-                        try:
-                            _, pval, _, _ = het_arch(series, nlags=5)
-                            has_arch      = pval < 0.05
-                            arch_rows.append({
-                                "Feature":       col,
-                                "ARCH p-değeri": round(pval, 4),
-                                "Durum":         "❌ ARCH Etkisi Var" if has_arch else "✅ ARCH Etkisi Yok",
-                            })
-                        except Exception:
-                            arch_rows.append({"Feature": col, "ARCH p-değeri": np.nan, "Durum": "⚠️ Hata"})
-                    arch_df      = pd.DataFrame(arch_rows)
-                    arch_problem = arch_df[arch_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-
-                    # ── JARQUE-BERA (Model Artıklarının Normalliği) ──
-                    jb_rows = []
-                    try:
-                        sub_jb   = ds[after_vif + [target]].dropna()
-                        X_jb     = add_constant(sub_jb[after_vif].values.astype(float))
-                        model_jb = OLS(sub_jb[target].values, X_jb).fit()
-                        jb_stat, jb_pval, skew, kurt = jarque_bera(model_jb.resid)
-                        non_normal = jb_pval < 0.05
-                        jb_rows.append({
-                            "Model":        f"OLS ({len(after_vif)} feature → {target})",
-                            "JB p-değeri":  round(jb_pval, 4),
-                            "Çarpıklık":    round(skew, 4),
-                            "Basıklık":     round(kurt, 4),
-                            "Durum":        "❌ Normal Değil" if non_normal else "✅ Normal",
-                        })
-                        jb_problem = [target] if non_normal else []
-                    except Exception:
-                        jb_rows.append({"Model": f"OLS ({len(after_vif)} feature → {target})", "JB p-değeri": np.nan, "Çarpıklık": np.nan, "Basıklık": np.nan, "Durum": "⚠️ Hata"})
-                        jb_problem = []
-                    jb_df = pd.DataFrame(jb_rows)
-
-                    # ── RESET (Doğrusallık) ───────────────────────
-                    reset_rows = []
-                    sub_reset  = ds[after_vif + [target]].dropna()
-                    for col in after_vif:
-                        try:
-                            X_r    = add_constant(sub_reset[[col]])
-                            model  = OLS(sub_reset[target], X_r).fit()
-                            rst    = linear_reset(model, power=2, use_f=True)
-                            pval   = rst.pvalue
-                            nonlin = pval < 0.05
-                            reset_rows.append({
-                                "Feature":         col,
-                                "RESET p-değeri":  round(pval, 4),
-                                "Durum":           "❌ Doğrusal Değil" if nonlin else "✅ Doğrusal",
-                            })
-                        except Exception:
-                            reset_rows.append({"Feature": col, "RESET p-değeri": np.nan, "Durum": "⚠️ Hata"})
-                    reset_df      = pd.DataFrame(reset_rows)
-                    reset_problem = reset_df[reset_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-
-                    # ── CUSUM (Yapısal Kırılma) ───────────────────
-                    cusum_rows = []
-                    for col in after_vif + [target]:
-                        series = ds[col].dropna()
-                        try:
-                            X_c      = add_constant(np.arange(len(series)))
-                            model_c  = OLS(series.values, X_c).fit()
-                            _, pval, _ = breaks_cusumolsresid(model_c.resid)
-                            has_break  = pval < 0.05
-                            cusum_rows.append({
-                                "Feature":        col,
-                                "CUSUM p-değeri": round(pval, 4),
-                                "Durum":          "❌ Yapısal Kırılma Var" if has_break else "✅ Stabil",
-                            })
-                        except Exception:
-                            cusum_rows.append({"Feature": col, "CUSUM p-değeri": np.nan, "Durum": "⚠️ Hata"})
-                    cusum_df      = pd.DataFrame(cusum_rows)
-                    cusum_problem = cusum_df[cusum_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-
-                    fs_results[ds_name] = {
-                        "n":            len(sub),
-                        "candidates":   candidates,
-                        "corr_tbl":     corr_tbl,
-                        "corr_low":     low_list,
-                        "corr_high":    high_list,
-                        "after_corr":   after_corr,
-                        "vif_df":       vif_df,
-                        "vif_rem":      vif_rem,
-                        "after_vif":    after_vif,
-                        "adf_df":       adf_df,
-                        "non_stat":     non_stat,
-                        "lb_df":        lb_df,
-                        "lb_problem":   lb_problem,
-                        "arch_df":      arch_df,
-                        "arch_problem": arch_problem,
-                        "jb_df":        jb_df,
-                        "jb_problem":   jb_problem,
-                        "reset_df":     reset_df,
-                        "reset_problem": reset_problem,
-                        "cusum_df":     cusum_df,
-                        "cusum_problem": cusum_problem,
-                    }
-
-                st.session_state["fs_results"]      = fs_results
-                st.session_state["fs_vif_thr_used"] = vif_thr
-
-            # ── SONUÇLAR ────────────────────────────────────────
-            if "fs_results" in st.session_state:
-                fs_results = st.session_state["fs_results"]
-                _vif_thr   = st.session_state.get("fs_vif_thr_used", 10.0)
-
-                for ds_name, res in fs_results.items():
-                    with st.expander(f"📊 {ds_name}  —  n={res['n']:,}", expanded=False):
-
-                        st.markdown("**1️⃣ Spearman Korelasyon Filtresi**")
-                        st.dataframe(
-                            res["corr_tbl"].style.format({"|ρ| ile Close": "{:.4f}"}),
-                            use_container_width=True, hide_index=True,
-                        )
-                        ca, cb = st.columns(2)
-                        with ca:
-                            st.error(f"Düşük |ρ| → çıkar: {res['corr_low'] if res['corr_low'] else 'Yok'}")
-                            st.warning(f"Multicollinearity → çıkar: {res['corr_high'] if res['corr_high'] else 'Yok'}")
-                        with cb:
-                            st.success(f"Kalan ({len(res['after_corr'])}): {res['after_corr']}")
-
-                        st.markdown("**2️⃣ VIF Analizi**")
-                        _t = _vif_thr
-                        def _vc(val, t=_t):
-                            if not isinstance(val, (int, float)): return ""
-                            if val > t:         return "background-color:#f8d7da; color:#842029"
-                            if val > t * 0.7:   return "background-color:#fff3cd; color:#664d03"
-                            return                     "background-color:#d1e7dd; color:#0a3622"
-                        st.dataframe(
-                            res["vif_df"].style.map(_vc, subset=["VIF"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        ca, cb = st.columns(2)
-                        with ca:
-                            st.error(f"VIF > {_vif_thr} → çıkar: {res['vif_rem'] if res['vif_rem'] else 'Yok'}")
-                        with cb:
-                            st.success(f"Kalan ({len(res['after_vif'])}): {res['after_vif']}")
-
-                        st.markdown("**3️⃣ ADF Durağanlık Testi**")
-                        def _ac(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["adf_df"].style.map(_ac, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        non_feat = [f for f in res["non_stat"] if f != target]
-                        if non_feat:
-                            st.warning(f"Durağan Olmayan: `{'`, `'.join(non_feat)}`")
-                        if not res["non_stat"]:
-                            st.success("Tüm değişkenler durağan.")
-
-                        st.markdown("**4️⃣ Ljung-Box Otokorelasyon Testi** *(lag=10)*")
-                        def _lbc(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["lb_df"].style.map(_lbc, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        lb_feat = [f for f in res["lb_problem"] if f != target]
-                        if lb_feat:
-                            st.warning(f"Otokorelasyon Tespit Edildi: `{'`, `'.join(lb_feat)}` — GLS/HAC standart hata veya fark alma önerilir.")
-                        else:
-                            st.success("Otokorelasyon tespit edilmedi.")
-
-                        st.markdown("**5️⃣ ARCH Heteroskedasticity Testi** *(lag=5)*")
-                        def _archc(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["arch_df"].style.map(_archc, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        arch_feat = [f for f in res["arch_problem"] if f != target]
-                        if arch_feat:
-                            st.warning(f"ARCH Etkisi Tespit Edildi: `{'`, `'.join(arch_feat)}` — Volatilite kümelenmesi var, GARCH modelleme düşünülebilir.")
-                        else:
-                            st.success("ARCH etkisi tespit edilmedi.")
-
-                        if "jb_df" not in res:
-                            st.info("6️⃣-8️⃣ testler için analizi yeniden çalıştırın.")
-                        else:
-                            st.markdown("**6️⃣ Jarque-Bera Normallik Testi** *(model artıkları)*")
-                            def _jbc(val):
+                            jb_rows.append({"Model": f"OLS ({len(after_vif)} feature → {target})", "JB p-değeri": np.nan, "Çarpıklık": np.nan, "Basıklık": np.nan, "Durum": "⚠️ Hata"})
+                            jb_problem = []
+                        jb_df = pd.DataFrame(jb_rows)
+    
+                        # ── RESET (Doğrusallık) ───────────────────────
+                        reset_rows = []
+                        sub_reset  = ds[after_vif + [target]].dropna()
+                        for col in after_vif:
+                            try:
+                                X_r    = add_constant(sub_reset[[col]])
+                                model  = OLS(sub_reset[target], X_r).fit()
+                                rst    = linear_reset(model, power=2, use_f=True)
+                                pval   = rst.pvalue
+                                nonlin = pval < 0.05
+                                reset_rows.append({
+                                    "Feature":         col,
+                                    "RESET p-değeri":  round(pval, 4),
+                                    "Durum":           "❌ Doğrusal Değil" if nonlin else "✅ Doğrusal",
+                                })
+                            except Exception:
+                                reset_rows.append({"Feature": col, "RESET p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                        reset_df      = pd.DataFrame(reset_rows)
+                        reset_problem = reset_df[reset_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+    
+                        # ── CUSUM (Yapısal Kırılma) ───────────────────
+                        cusum_rows = []
+                        for col in after_vif + [target]:
+                            series = ds[col].dropna()
+                            try:
+                                X_c      = add_constant(np.arange(len(series)))
+                                model_c  = OLS(series.values, X_c).fit()
+                                _, pval, _ = breaks_cusumolsresid(model_c.resid)
+                                has_break  = pval < 0.05
+                                cusum_rows.append({
+                                    "Feature":        col,
+                                    "CUSUM p-değeri": round(pval, 4),
+                                    "Durum":          "❌ Yapısal Kırılma Var" if has_break else "✅ Stabil",
+                                })
+                            except Exception:
+                                cusum_rows.append({"Feature": col, "CUSUM p-değeri": np.nan, "Durum": "⚠️ Hata"})
+                        cusum_df      = pd.DataFrame(cusum_rows)
+                        cusum_problem = cusum_df[cusum_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+    
+                        fs_results[ds_name] = {
+                            "n":            len(sub),
+                            "candidates":   candidates,
+                            "corr_tbl":     corr_tbl,
+                            "corr_low":     low_list,
+                            "corr_high":    high_list,
+                            "after_corr":   after_corr,
+                            "vif_df":       vif_df,
+                            "vif_rem":      vif_rem,
+                            "after_vif":    after_vif,
+                            "adf_df":       adf_df,
+                            "non_stat":     non_stat,
+                            "lb_df":        lb_df,
+                            "lb_problem":   lb_problem,
+                            "arch_df":      arch_df,
+                            "arch_problem": arch_problem,
+                            "jb_df":        jb_df,
+                            "jb_problem":   jb_problem,
+                            "reset_df":     reset_df,
+                            "reset_problem": reset_problem,
+                            "cusum_df":     cusum_df,
+                            "cusum_problem": cusum_problem,
+                        }
+    
+                    st.session_state["fs_results"]      = fs_results
+                    st.session_state["fs_vif_thr_used"] = vif_thr
+    
+                # ── SONUÇLAR ────────────────────────────────────────
+                if "fs_results" in st.session_state:
+                    fs_results = st.session_state["fs_results"]
+                    _vif_thr   = st.session_state.get("fs_vif_thr_used", 10.0)
+    
+                    for ds_name, res in fs_results.items():
+                        with st.expander(f"📊 {ds_name}  —  n={res['n']:,}", expanded=False):
+    
+                            st.markdown("**1️⃣ Spearman Korelasyon Filtresi**")
+                            st.dataframe(
+                                res["corr_tbl"].style.format({"|ρ| ile Close": "{:.4f}"}),
+                                use_container_width=True, hide_index=True,
+                            )
+                            ca, cb = st.columns(2)
+                            with ca:
+                                st.error(f"Düşük |ρ| → çıkar: {res['corr_low'] if res['corr_low'] else 'Yok'}")
+                                st.warning(f"Multicollinearity → çıkar: {res['corr_high'] if res['corr_high'] else 'Yok'}")
+                            with cb:
+                                st.success(f"Kalan ({len(res['after_corr'])}): {res['after_corr']}")
+    
+                            st.markdown("**2️⃣ VIF Analizi**")
+                            _t = _vif_thr
+                            def _vc(val, t=_t):
+                                if not isinstance(val, (int, float)): return ""
+                                if val > t:         return "background-color:#f8d7da; color:#842029"
+                                if val > t * 0.7:   return "background-color:#fff3cd; color:#664d03"
+                                return                     "background-color:#d1e7dd; color:#0a3622"
+                            st.dataframe(
+                                res["vif_df"].style.map(_vc, subset=["VIF"]),
+                                use_container_width=True, hide_index=True,
+                            )
+                            ca, cb = st.columns(2)
+                            with ca:
+                                st.error(f"VIF > {_vif_thr} → çıkar: {res['vif_rem'] if res['vif_rem'] else 'Yok'}")
+                            with cb:
+                                st.success(f"Kalan ({len(res['after_vif'])}): {res['after_vif']}")
+    
+                            st.markdown("**3️⃣ ADF Durağanlık Testi**")
+                            def _ac(val):
                                 if not isinstance(val, str): return ""
                                 if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
                                 if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
                                 return ""
                             st.dataframe(
-                                res["jb_df"].style.map(_jbc, subset=["Durum"]),
+                                res["adf_df"].style.map(_ac, subset=["Durum"]),
                                 use_container_width=True, hide_index=True,
                             )
-                            if res.get("jb_problem"):
-                                st.warning("Model artıkları normal dağılmıyor — Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz.")
-                            else:
-                                st.success("Model artıkları normal dağılıyor.")
-
-                            st.markdown("**7️⃣ RESET Doğrusallık Testi**")
-                            def _rc(val):
+                            non_feat = [f for f in res["non_stat"] if f != target]
+                            if non_feat:
+                                st.warning(f"Durağan Olmayan: `{'`, `'.join(non_feat)}`")
+                            if not res["non_stat"]:
+                                st.success("Tüm değişkenler durağan.")
+    
+                            st.markdown("**4️⃣ Ljung-Box Otokorelasyon Testi** *(lag=10)*")
+                            def _lbc(val):
                                 if not isinstance(val, str): return ""
                                 if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
                                 if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
                                 return ""
                             st.dataframe(
-                                res["reset_df"].style.map(_rc, subset=["Durum"]),
+                                res["lb_df"].style.map(_lbc, subset=["Durum"]),
                                 use_container_width=True, hide_index=True,
                             )
-                            reset_feat = res["reset_problem"]
-                            if reset_feat:
-                                st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir.")
+                            lb_feat = [f for f in res["lb_problem"] if f != target]
+                            if lb_feat:
+                                st.warning(f"Otokorelasyon Tespit Edildi: `{'`, `'.join(lb_feat)}` — GLS/HAC standart hata veya fark alma önerilir.")
                             else:
-                                st.success("Tüm feature-target ilişkileri doğrusal.")
-
-                            st.markdown("**8️⃣ CUSUM Yapısal Kırılma Testi**")
-                            def _cc(val):
+                                st.success("Otokorelasyon tespit edilmedi.")
+    
+                            st.markdown("**5️⃣ ARCH Heteroskedasticity Testi** *(lag=5)*")
+                            def _archc(val):
                                 if not isinstance(val, str): return ""
                                 if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
                                 if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
                                 return ""
                             st.dataframe(
-                                res["cusum_df"].style.map(_cc, subset=["Durum"]),
+                                res["arch_df"].style.map(_archc, subset=["Durum"]),
                                 use_container_width=True, hide_index=True,
                             )
-                            cusum_feat = [f for f in res["cusum_problem"] if f != target]
-                            if cusum_feat:
-                                st.warning(f"Yapısal Kırılma Tespit Edildi: `{'`, `'.join(cusum_feat)}` — Zaman serisi ikiye bölünüp ayrı model kurulabilir veya rolling window kullanılabilir.")
+                            arch_feat = [f for f in res["arch_problem"] if f != target]
+                            if arch_feat:
+                                st.warning(f"ARCH Etkisi Tespit Edildi: `{'`, `'.join(arch_feat)}` — Volatilite kümelenmesi var, GARCH modelleme düşünülebilir.")
                             else:
-                                st.success("Yapısal kırılma tespit edilmedi.")
-
-                # ── KARŞILAŞTIRMA ────────────────────────────────
-                st.markdown("---")
-                st.markdown("### 📊 Karşılaştırma")
-
-                comp_rows = []
-                for ds_name, res in fs_results.items():
-                    adf_pass   = res["adf_df"]["Durum"].str.startswith("✅").sum()
-                    adf_total  = len(res["adf_df"])
-                    lb_pass    = res["lb_df"]["Durum"].str.startswith("✅").sum()
-                    arch_pass  = res["arch_df"]["Durum"].str.startswith("✅").sum()
-                    jb_pass    = res["jb_df"]["Durum"].str.startswith("✅").sum() if "jb_df" in res else "-"
-                    jb_total   = len(res["jb_df"]) if "jb_df" in res else "-"
-                    reset_pass = res["reset_df"]["Durum"].str.startswith("✅").sum() if "reset_df" in res else "-"
-                    reset_tot  = len(res["reset_df"]) if "reset_df" in res else "-"
-                    cusum_pass = res["cusum_df"]["Durum"].str.startswith("✅").sum() if "cusum_df" in res else "-"
-                    comp_rows.append({
-                        "Veri Seti":          ds_name,
-                        "Başlangıç":          len(res["candidates"]),
-                        "Korelasyon Sonrası": len(res["after_corr"]),
-                        "VIF Sonrası":        len(res["after_vif"]),
-                        "ADF Geçen":          f"{adf_pass}/{adf_total}",
-                        "LB Geçen":           f"{lb_pass}/{adf_total}",
-                        "ARCH Geçen":         f"{arch_pass}/{adf_total}",
-                        "JB Geçen":           f"{jb_pass}/{jb_total}" if jb_pass != "-" else "-",
-                        "RESET Geçen":        f"{reset_pass}/{reset_tot}" if reset_pass != "-" else "-",
-                        "CUSUM Geçen":        f"{cusum_pass}/{adf_total}" if cusum_pass != "-" else "-",
-                        "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
-                    })
-
-                st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
-
-                if len(fs_results) > 1:
-                    all_survivors = [set(res["after_vif"]) for res in fs_results.values()]
-                    common        = set.intersection(*all_survivors)
-                    if common:
-                        st.success(f"**Tüm veri setlerinde ortak hayatta kalanlar ({len(common)}):** `{'`, `'.join(sorted(common))}`")
-                    else:
-                        st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
-
-                # ── MODEL TAVSİYESİ ───────────────────────────────
-                advice_key = st.selectbox(
-                    "Tavsiye için veri seti seçin:",
-                    list(fs_results.keys()),
-                    index=len(fs_results) - 1,
-                    key="fs_advice_key",
-                )
-                advice_res  = fs_results[advice_key]
-                any_ns      = len(advice_res["non_stat"]) > 0
-                any_lb      = len(advice_res["lb_problem"]) > 0
-                any_arch    = len(advice_res["arch_problem"]) > 0
-                any_jb      = len(advice_res.get("jb_problem", [])) > 0
-                any_reset   = len(advice_res.get("reset_problem", [])) > 0
-                any_cusum   = len(advice_res.get("cusum_problem", [])) > 0
-
-                with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
-                    st.markdown("""
-| Test | Sonuç | Regresyon Etkisi | Tavsiye |
-|---|---|---|---|
-| **ADF (Durağanlık)** | {} | Durağan olmayan seri sahte regresyon üretir | {} |
-| **Ljung-Box (Otokorelasyon)** | {} | Standart hatalar yanlış, t-istatistikleri güvenilmez | {} |
-| **ARCH (Heteroskedasticity)** | {} | Varyans sabit değil, OLS verimsiz kalır | {} |
-| **Jarque-Bera (Normallik)** | {} | Küçük örneklemde katsayı testi güvenilmezleşir | {} |
-| **RESET (Doğrusallık)** | {} | Lineer model ilişkiyi eksik yakalar | {} |
-| **CUSUM (Yapısal Kırılma)** | {} | Katsayılar zaman içinde değişiyor, model kararsız | {} |
-""".format(
-                        "❌ Sorun var" if any_ns    else "✅ Temiz",
-                        "Fark alma (`diff`) veya log-return kullan" if any_ns else "İşlem gerekmez",
-                        "❌ Sorun var" if any_lb    else "✅ Temiz",
-                        "OLS + **HAC/Newey-West** standart hata kullan" if any_lb else "Standart OLS uygulanabilir",
-                        "❌ Sorun var" if any_arch  else "✅ Temiz",
-                        "Volatilite tahmini → **GARCH**; getiri tahmini → OLS+HAC yeterli" if any_arch else "OLS varyans tahmini güvenilir",
-                        "❌ Sorun var" if any_jb    else "✅ Temiz",
-                        "Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz" if any_jb else "Normallik varsayımı sağlanıyor",
-                        "❌ Sorun var" if any_reset else "✅ Temiz",
-                        "Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS ile devam edilebilir ancak katsayılar yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir" if any_reset else "Doğrusal model yeterli",
-                        "❌ Sorun var" if any_cusum else "✅ Temiz",
-                        "Rolling window veya zaman dilimlerine göre ayrı model kurulabilir" if any_cusum else "Katsayılar zaman içinde stabil",
-                    ))
-
+                                st.success("ARCH etkisi tespit edilmedi.")
+    
+                            if "jb_df" not in res:
+                                st.info("6️⃣-8️⃣ testler için analizi yeniden çalıştırın.")
+                            else:
+                                st.markdown("**6️⃣ Jarque-Bera Normallik Testi** *(model artıkları)*")
+                                def _jbc(val):
+                                    if not isinstance(val, str): return ""
+                                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                    return ""
+                                st.dataframe(
+                                    res["jb_df"].style.map(_jbc, subset=["Durum"]),
+                                    use_container_width=True, hide_index=True,
+                                )
+                                if res.get("jb_problem"):
+                                    st.warning("Model artıkları normal dağılmıyor — Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz.")
+                                else:
+                                    st.success("Model artıkları normal dağılıyor.")
+    
+                                st.markdown("**7️⃣ RESET Doğrusallık Testi**")
+                                def _rc(val):
+                                    if not isinstance(val, str): return ""
+                                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                    return ""
+                                st.dataframe(
+                                    res["reset_df"].style.map(_rc, subset=["Durum"]),
+                                    use_container_width=True, hide_index=True,
+                                )
+                                reset_feat = res["reset_problem"]
+                                if reset_feat:
+                                    st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir.")
+                                else:
+                                    st.success("Tüm feature-target ilişkileri doğrusal.")
+    
+                                st.markdown("**8️⃣ CUSUM Yapısal Kırılma Testi**")
+                                def _cc(val):
+                                    if not isinstance(val, str): return ""
+                                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                    return ""
+                                st.dataframe(
+                                    res["cusum_df"].style.map(_cc, subset=["Durum"]),
+                                    use_container_width=True, hide_index=True,
+                                )
+                                cusum_feat = [f for f in res["cusum_problem"] if f != target]
+                                if cusum_feat:
+                                    st.warning(f"Yapısal Kırılma Tespit Edildi: `{'`, `'.join(cusum_feat)}` — Zaman serisi ikiye bölünüp ayrı model kurulabilir veya rolling window kullanılabilir.")
+                                else:
+                                    st.success("Yapısal kırılma tespit edilmedi.")
+    
+                    # ── KARŞILAŞTIRMA ────────────────────────────────
                     st.markdown("---")
-                    st.markdown("#### 🎯 Önerilen Yaklaşım")
+                    st.markdown("### 📊 Karşılaştırma")
+    
+                    comp_rows = []
+                    for ds_name, res in fs_results.items():
+                        adf_pass   = res["adf_df"]["Durum"].str.startswith("✅").sum()
+                        adf_total  = len(res["adf_df"])
+                        lb_pass    = res["lb_df"]["Durum"].str.startswith("✅").sum()
+                        arch_pass  = res["arch_df"]["Durum"].str.startswith("✅").sum()
+                        jb_pass    = res["jb_df"]["Durum"].str.startswith("✅").sum() if "jb_df" in res else "-"
+                        jb_total   = len(res["jb_df"]) if "jb_df" in res else "-"
+                        reset_pass = res["reset_df"]["Durum"].str.startswith("✅").sum() if "reset_df" in res else "-"
+                        reset_tot  = len(res["reset_df"]) if "reset_df" in res else "-"
+                        cusum_pass = res["cusum_df"]["Durum"].str.startswith("✅").sum() if "cusum_df" in res else "-"
+                        comp_rows.append({
+                            "Veri Seti":          ds_name,
+                            "Başlangıç":          len(res["candidates"]),
+                            "Korelasyon Sonrası": len(res["after_corr"]),
+                            "VIF Sonrası":        len(res["after_vif"]),
+                            "ADF Geçen":          f"{adf_pass}/{adf_total}",
+                            "LB Geçen":           f"{lb_pass}/{adf_total}",
+                            "ARCH Geçen":         f"{arch_pass}/{adf_total}",
+                            "JB Geçen":           f"{jb_pass}/{jb_total}" if jb_pass != "-" else "-",
+                            "RESET Geçen":        f"{reset_pass}/{reset_tot}" if reset_pass != "-" else "-",
+                            "CUSUM Geçen":        f"{cusum_pass}/{adf_total}" if cusum_pass != "-" else "-",
+                            "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
+                        })
+    
+                    st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+    
+                    if len(fs_results) > 1:
+                        all_survivors = [set(res["after_vif"]) for res in fs_results.values()]
+                        common        = set.intersection(*all_survivors)
+                        if common:
+                            st.success(f"**Tüm veri setlerinde ortak hayatta kalanlar ({len(common)}):** `{'`, `'.join(sorted(common))}`")
+                        else:
+                            st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
+    
+                    # ── MODEL TAVSİYESİ ───────────────────────────────
+                    advice_key = st.selectbox(
+                        "Tavsiye için veri seti seçin:",
+                        list(fs_results.keys()),
+                        index=len(fs_results) - 1,
+                        key="fs_advice_key",
+                    )
+                    advice_res  = fs_results[advice_key]
+                    any_ns      = len(advice_res["non_stat"]) > 0
+                    any_lb      = len(advice_res["lb_problem"]) > 0
+                    any_arch    = len(advice_res["arch_problem"]) > 0
+                    any_jb      = len(advice_res.get("jb_problem", [])) > 0
+                    any_reset   = len(advice_res.get("reset_problem", [])) > 0
+                    any_cusum   = len(advice_res.get("cusum_problem", [])) > 0
+    
+                    with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
+                        st.markdown("""
+    | Test | Sonuç | Regresyon Etkisi | Tavsiye |
+    |---|---|---|---|
+    | **ADF (Durağanlık)** | {} | Durağan olmayan seri sahte regresyon üretir | {} |
+    | **Ljung-Box (Otokorelasyon)** | {} | Standart hatalar yanlış, t-istatistikleri güvenilmez | {} |
+    | **ARCH (Heteroskedasticity)** | {} | Varyans sabit değil, OLS verimsiz kalır | {} |
+    | **Jarque-Bera (Normallik)** | {} | Küçük örneklemde katsayı testi güvenilmezleşir | {} |
+    | **RESET (Doğrusallık)** | {} | Lineer model ilişkiyi eksik yakalar | {} |
+    | **CUSUM (Yapısal Kırılma)** | {} | Katsayılar zaman içinde değişiyor, model kararsız | {} |
+    """.format(
+                            "❌ Sorun var" if any_ns    else "✅ Temiz",
+                            "Fark alma (`diff`) veya log-return kullan" if any_ns else "İşlem gerekmez",
+                            "❌ Sorun var" if any_lb    else "✅ Temiz",
+                            "OLS + **HAC/Newey-West** standart hata kullan" if any_lb else "Standart OLS uygulanabilir",
+                            "❌ Sorun var" if any_arch  else "✅ Temiz",
+                            "Volatilite tahmini → **GARCH**; getiri tahmini → OLS+HAC yeterli" if any_arch else "OLS varyans tahmini güvenilir",
+                            "❌ Sorun var" if any_jb    else "✅ Temiz",
+                            "Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz" if any_jb else "Normallik varsayımı sağlanıyor",
+                            "❌ Sorun var" if any_reset else "✅ Temiz",
+                            "Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS ile devam edilebilir ancak katsayılar yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir" if any_reset else "Doğrusal model yeterli",
+                            "❌ Sorun var" if any_cusum else "✅ Temiz",
+                            "Rolling window veya zaman dilimlerine göre ayrı model kurulabilir" if any_cusum else "Katsayılar zaman içinde stabil",
+                        ))
+    
+                        st.markdown("---")
+                        st.markdown("#### 🎯 Önerilen Yaklaşım")
+    
+                        problems = sum([any_ns, any_lb, any_arch, any_jb, any_reset, any_cusum])
+    
+                        if problems == 0:
+                            st.success("""
+    **Tüm testler temiz.**
+    
+    - Klasik OLS regresyon doğrudan uygulanabilir
+    - ML / Derin öğrenme doğrudan kullanılabilir — normallik, doğrusallık ve multicollinearity varsayımları zaten geçerli değil; durağanlık ve yapısal kararlılık da sağlandığından concept drift riski düşük
+                            """)
+                        else:
+                            msg = "**Tespit edilen sorunlar ve öneriler:**\n\n"
+                            if any_ns:
+                                msg += "- **Durağan değil** → Fark alma veya log-return ile dönüştür\n"
+                            if any_lb:
+                                msg += "- **Otokorelasyon var** → OLS + HAC (Newey-West) standart hata kullan\n"
+                            if any_arch:
+                                msg += "- **ARCH etkisi var** → Volatilite tahmini için GARCH; getiri tahmini için OLS+HAC yeterli\n"
+                            if any_jb:
+                                msg += "- **Normal dağılmıyor** → Durağan/zayıf bağımlı serilerde CLT geçerlidir; bu veri setinde ADF/ARCH sorunları da mevcutsa OLS + HAC kullan\n"
+                            if any_reset:
+                                msg += "- **Doğrusal değil** → Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumla. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir\n"
+                            if any_cusum:
+                                msg += "- **Yapısal kırılma var** → Rolling window veya zaman dilimine göre ayrı model kur\n"
+                            msg += "\n**ML / Derin öğrenme kullanacaksan:**\n"
+                            msg += "- Normallik (JB), doğrusallık (RESET) ve multicollinearity (VIF) varsayımları geçerli değil — bu testleri görmezden gelebilirsin\n"
+                            if any_ns:
+                                msg += "- ⚠️ **Durağanlık (ADF) ML/DL için de kritik** — durağan olmayan veri concept drift ve overfitting riskini artırır; log-return almayı düşün\n"
+                            if any_cusum:
+                                msg += "- ⚠️ **Yapısal kırılma (CUSUM) ML/DL için de kritik** — eğitim/test dağılımı farklılaşır; rolling window ile eğit\n"
+                            if any_arch:
+                                msg += "- ℹ️ ARCH etkisi LSTM/Transformer gibi sequence modellerinde window boyutu seçimini etkileyebilir\n"
+                            st.warning(msg)
+    
+                    # ── SONUÇ & EXCEL İNDİR ──────────────────────────
+                    st.markdown("---")
+                    st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
+    
+                    dl_key = st.selectbox(
+                        "İndirilecek veri setini seçin:",
+                        list(fs_results.keys()),
+                        index=len(fs_results) - 1,
+                        key="fs_dl_key",
+                    )
+                    ref_res        = fs_results[dl_key]
+                    final_features = ref_res["after_vif"]
+                    fs_df          = DATASETS[dl_key]
+                    all_candidates = ref_res["candidates"]
+    
+                    st.info(
+                        f"**Hayatta kalan feature'lar — {dl_key}"
+                        f" ({len(final_features)}):** `{'`, `'.join(final_features)}`"
+                    )
+    
+                    st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
+                    export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
+                    final_selected    = [target]
+                    fs_cols_per_row   = 4
+                    fs_rows = [export_candidates[i:i+fs_cols_per_row] for i in range(0, len(export_candidates), fs_cols_per_row)]
+                    for fs_row in fs_rows:
+                        fs_cb_cols = st.columns(len(fs_row))
+                        for i, col_name in enumerate(fs_row):
+                            with fs_cb_cols[i]:
+                                disabled = col_name == target
+                                checked  = st.checkbox(col_name, value=disabled, key=f"fs_cb_{col_name}", disabled=disabled)
+                                if checked and col_name not in final_selected:
+                                    final_selected.append(col_name)
+    
+                    export_final = fs_df[final_selected].copy()
+                    export_final.index.name = date_col_name
+                    export_final = export_final.reset_index()
+    
+                    buf_final = BytesIO()
+                    with pd.ExcelWriter(buf_final, engine="openpyxl") as writer:
+                        export_final.to_excel(writer, index=False, sheet_name="Data")
+                    buf_final.seek(0)
+    
+                    st.download_button(
+                        label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
+                        data=buf_final.getvalue(),
+                        file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_{dl_key.split('—')[-1].strip().replace(' ', '_').lower()}_secili.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+    
+    with tab3:
+        st.subheader("📈 Regresyon")
+        if "fs_results" not in st.session_state:
+            st.info("Önce **Feature Analizi** sekmesinde analizi çalıştırın.")
+        else:
+            st.caption("Feature analizi tamamlandı. Regresyon modeli kurulmaya hazır.")
+            st.info("🚧 Bu bölüm yakında eklenecek.")
 
-                    problems = sum([any_ns, any_lb, any_arch, any_jb, any_reset, any_cusum])
-
-                    if problems == 0:
-                        st.success("""
-**Tüm testler temiz.**
-
-- Klasik OLS regresyon doğrudan uygulanabilir
-- ML / Derin öğrenme doğrudan kullanılabilir — normallik, doğrusallık ve multicollinearity varsayımları zaten geçerli değil; durağanlık ve yapısal kararlılık da sağlandığından concept drift riski düşük
-                        """)
-                    else:
-                        msg = "**Tespit edilen sorunlar ve öneriler:**\n\n"
-                        if any_ns:
-                            msg += "- **Durağan değil** → Fark alma veya log-return ile dönüştür\n"
-                        if any_lb:
-                            msg += "- **Otokorelasyon var** → OLS + HAC (Newey-West) standart hata kullan\n"
-                        if any_arch:
-                            msg += "- **ARCH etkisi var** → Volatilite tahmini için GARCH; getiri tahmini için OLS+HAC yeterli\n"
-                        if any_jb:
-                            msg += "- **Normal dağılmıyor** → Durağan/zayıf bağımlı serilerde CLT geçerlidir; bu veri setinde ADF/ARCH sorunları da mevcutsa OLS + HAC kullan\n"
-                        if any_reset:
-                            msg += "- **Doğrusal değil** → Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumla. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir\n"
-                        if any_cusum:
-                            msg += "- **Yapısal kırılma var** → Rolling window veya zaman dilimine göre ayrı model kur\n"
-                        msg += "\n**ML / Derin öğrenme kullanacaksan:**\n"
-                        msg += "- Normallik (JB), doğrusallık (RESET) ve multicollinearity (VIF) varsayımları geçerli değil — bu testleri görmezden gelebilirsin\n"
-                        if any_ns:
-                            msg += "- ⚠️ **Durağanlık (ADF) ML/DL için de kritik** — durağan olmayan veri concept drift ve overfitting riskini artırır; log-return almayı düşün\n"
-                        if any_cusum:
-                            msg += "- ⚠️ **Yapısal kırılma (CUSUM) ML/DL için de kritik** — eğitim/test dağılımı farklılaşır; rolling window ile eğit\n"
-                        if any_arch:
-                            msg += "- ℹ️ ARCH etkisi LSTM/Transformer gibi sequence modellerinde window boyutu seçimini etkileyebilir\n"
-                        st.warning(msg)
-
-                # ── SONUÇ & EXCEL İNDİR ──────────────────────────
-                st.markdown("---")
-                st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
-
-                dl_key = st.selectbox(
-                    "İndirilecek veri setini seçin:",
-                    list(fs_results.keys()),
-                    index=len(fs_results) - 1,
-                    key="fs_dl_key",
-                )
-                ref_res        = fs_results[dl_key]
-                final_features = ref_res["after_vif"]
-                fs_df          = DATASETS[dl_key]
-                all_candidates = ref_res["candidates"]
-
-                st.info(
-                    f"**Hayatta kalan feature'lar — {dl_key}"
-                    f" ({len(final_features)}):** `{'`, `'.join(final_features)}`"
-                )
-
-                st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
-                export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
-                final_selected    = [target]
-                fs_cols_per_row   = 4
-                fs_rows = [export_candidates[i:i+fs_cols_per_row] for i in range(0, len(export_candidates), fs_cols_per_row)]
-                for fs_row in fs_rows:
-                    fs_cb_cols = st.columns(len(fs_row))
-                    for i, col_name in enumerate(fs_row):
-                        with fs_cb_cols[i]:
-                            disabled = col_name == target
-                            checked  = st.checkbox(col_name, value=disabled, key=f"fs_cb_{col_name}", disabled=disabled)
-                            if checked and col_name not in final_selected:
-                                final_selected.append(col_name)
-
-                export_final = fs_df[final_selected].copy()
-                export_final.index.name = date_col_name
-                export_final = export_final.reset_index()
-
-                buf_final = BytesIO()
-                with pd.ExcelWriter(buf_final, engine="openpyxl") as writer:
-                    export_final.to_excel(writer, index=False, sheet_name="Data")
-                buf_final.seek(0)
-
-                st.download_button(
-                    label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
-                    data=buf_final.getvalue(),
-                    file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_{dl_key.split('—')[-1].strip().replace(' ', '_').lower()}_secili.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-
-    else:
-        st.warning("Filtreleme sonrası veri kalmadı.")
+else:
+    st.warning("Filtreleme sonrası veri kalmadı.")
