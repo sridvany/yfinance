@@ -418,7 +418,7 @@ if symbol:
     df_clean2      = pd.DataFrame()
     dl_df          = pd.DataFrame()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "📈 Regresyon", "🔗 Eşbütünleşme"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "📈 Regresyon", "🔗 Eşbütünleşme", "🏁 Final Model"])
 
     with tab1:
 
@@ -1595,6 +1595,166 @@ if symbol:
                                 st.error(f"**Sahte regresyon riski — güvenilmez:** `{'`, `'.join(sahte_olanlar)}`")
                         else:
                             st.info("Birleşik değerlendirme için önce Tab3'te **OLS + HAC (Newey-West)** modelini çalıştırın.")
+
+    with tab5:
+        st.subheader("🏁 Final Model")
+        st.caption("Tab4'teki birleşik değerlendirmeden güvenilir çıkan feature'larla temizlenmiş OLS + HAC modeli.")
+
+        if "reg_result" not in st.session_state:
+            st.info("Önce **Regresyon** sekmesinde OLS + HAC modelini çalıştırın.")
+        elif "coint_method_used" not in st.session_state:
+            st.info("Önce **Eşbütünleşme** sekmesinde testi çalıştırın.")
+        else:
+            # Tab4'ten güvenilir feature'ları al
+            summary_rows_saved = st.session_state.get("final_summary_rows", [])
+
+            # Yeniden hesapla
+            model_fit_r     = st.session_state["reg_result"]
+            feature_names_r = st.session_state["reg_features"]
+            johansen_ok     = st.session_state.get("coint_johansen_ok", None)
+            eg_map          = st.session_state.get("coint_eg_map", {})
+            method_used     = st.session_state.get("coint_method_used", "")
+            reg_target      = st.session_state.get("fs_target", "Close")
+
+            guvenilenler = []
+            for i, fname in enumerate(feature_names_r):
+                if fname == "const":
+                    continue
+                pval    = model_fit_r.pvalues[i]
+                anlamli = pval < 0.05
+                if method_used == "Johansen":
+                    esb_ok = johansen_ok
+                else:
+                    esb_ok = eg_map.get(fname, "").startswith("✅")
+
+                if anlamli and esb_ok:
+                    guvenilenler.append(fname)
+
+            if not guvenilenler:
+                st.warning("Tab4'te güvenilir feature bulunamadı. Farklı veri seti veya model deneyin.")
+            else:
+                st.success(f"**Final modele girecek feature'lar ({len(guvenilenler)}):** `{'`, `'.join(guvenilenler)}`")
+
+                if st.button("▶ Final Modeli Kur", key="final_run"):
+                    # Veri setini yeniden hazırla
+                    reg_ds_key  = st.session_state.get("reg_ds_key", list(fs_results.keys())[-1])
+                    lag_n       = st.session_state.get("reg_lag", 0)
+                    fs_results  = st.session_state["fs_results"]
+                    reg_res     = fs_results[reg_ds_key]
+
+                    DATASETS_FINAL = {
+                        "1 — Ham Veri":              df[[c for c in reg_res["after_vif"] + [reg_target] if c in df.columns]].dropna(),
+                        "2 — OHLC Temizlenmiş":      df_clean[[c for c in reg_res["after_vif"] + [reg_target] if c in df_clean.columns]].dropna() if not df_clean.empty else pd.DataFrame(),
+                        "3 — Tam Temizlenmiş":       df_clean2[[c for c in reg_res["after_vif"] + [reg_target] if c in df_clean2.columns]].dropna() if not df_clean2.empty else pd.DataFrame(),
+                        "4 — Temizlenmiş ve Transforme Edilmiş": dl_df[[c for c in reg_res["after_vif"] + [reg_target] if c in dl_df.columns]].dropna() if not dl_df.empty else pd.DataFrame(),
+                    }
+                    final_data = DATASETS_FINAL.get(reg_ds_key, pd.DataFrame()).copy()
+
+                    if final_data.empty:
+                        st.error("Veri seti boş.")
+                    else:
+                        # Lag varsa uygula
+                        base_features = [f.replace(f"_lag{lag_n}", "") if "_lag" in f else f for f in guvenilenler]
+                        base_features = [f for f in base_features if f in final_data.columns]
+
+                        if lag_n > 0:
+                            lagged = {f"{c}_lag{lag_n}": final_data[c].shift(lag_n) for c in base_features}
+                            final_data = pd.concat([final_data[[reg_target]], pd.DataFrame(lagged, index=final_data.index)], axis=1)
+                            X_final_cols = list(lagged.keys())
+                        else:
+                            X_final_cols = base_features
+
+                        final_data = final_data.dropna()
+                        y_final    = final_data[reg_target]
+                        X_final    = add_constant(final_data[X_final_cols].values.astype(float))
+                        fn_final   = ["const"] + X_final_cols
+
+                        try:
+                            final_fit = OLS(y_final.values, X_final).fit(cov_type="HAC", cov_kwds={"maxlags": 5})
+                            st.session_state["final_fit"]      = final_fit
+                            st.session_state["final_features"] = fn_final
+                            st.session_state["final_y"]        = y_final
+                        except Exception as e:
+                            st.error(f"Model hatası: {e}")
+
+            # ── Final Model Sonuçları ─────────────────────────────
+            if "final_fit" in st.session_state:
+                final_fit = st.session_state["final_fit"]
+                fn_final  = st.session_state["final_features"]
+
+                st.markdown("---")
+                st.markdown("#### Sonuçlar — OLS + HAC (Güvenilir Feature'lar)")
+
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric("R²",      f"{final_fit.rsquared:.4f}")
+                col_b.metric("Adj. R²", f"{final_fit.rsquared_adj:.4f}")
+                col_c.metric("AIC",     f"{final_fit.aic:.2f}")
+                col_d.metric("BIC",     f"{final_fit.bic:.2f}")
+
+                col_e, col_f = st.columns(2)
+                col_e.metric("F-istatistiği", f"{final_fit.fvalue:.4f}")
+                col_f.metric("F p-değeri",    f"{final_fit.f_pvalue:.4f}")
+
+                # Katsayılar
+                st.markdown("**Katsayılar**")
+                final_rows = []
+                for i, name in enumerate(fn_final):
+                    if name == "const":
+                        continue
+                    pval = final_fit.pvalues[i]
+                    sig  = "✅ Anlamlı" if pval < 0.05 else ("⚠️ Sınırda" if pval < 0.10 else "❌ Anlamsız")
+                    final_rows.append({
+                        "Feature":       name,
+                        "Katsayı":       round(final_fit.params[i], 6),
+                        "Std Hata":      round(final_fit.bse[i], 6),
+                        "t-istatistiği": round(final_fit.tvalues[i], 4),
+                        "p-değeri":      round(pval, 4),
+                        "Anlamlılık":    sig,
+                    })
+                final_df = pd.DataFrame(final_rows)
+
+                def _fc(val):
+                    if not isinstance(val, str): return ""
+                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                    if val.startswith("⚠️"): return "background-color:#fff3cd; color:#664d03"
+                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                    return ""
+
+                st.dataframe(
+                    final_df.style
+                        .format({"Katsayı": "{:.6f}", "Std Hata": "{:.6f}", "t-istatistiği": "{:.4f}", "p-değeri": "{:.4f}"})
+                        .map(_fc, subset=["Anlamlılık"]),
+                    use_container_width=True, hide_index=True,
+                )
+
+                # Tab3 ile karşılaştırma
+                if "reg_result" in st.session_state:
+                    st.markdown("**Tab3 ile Karşılaştırma**")
+                    prev_fit = st.session_state["reg_result"]
+                    comp_data = {
+                        "":          ["R²", "Adj. R²", "AIC", "BIC", "Feature Sayısı"],
+                        "Tam Model (Tab3)": [
+                            f"{prev_fit.rsquared:.4f}",
+                            f"{prev_fit.rsquared_adj:.4f}",
+                            f"{prev_fit.aic:.2f}",
+                            f"{prev_fit.bic:.2f}",
+                            str(len(st.session_state["reg_features"]) - 1),
+                        ],
+                        "Final Model (Tab5)": [
+                            f"{final_fit.rsquared:.4f}",
+                            f"{final_fit.rsquared_adj:.4f}",
+                            f"{final_fit.aic:.2f}",
+                            f"{final_fit.bic:.2f}",
+                            str(len(fn_final) - 1),
+                        ],
+                    }
+                    st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
+
+                    # AIC/BIC yorumu
+                    if final_fit.aic < prev_fit.aic:
+                        st.success("Final modelin AIC'i daha düşük — daha az feature ile daha iyi model.")
+                    else:
+                        st.info("Tam modelin AIC'i daha düşük — çıkarılan feature'lar bilgi taşıyor olabilir.")
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
