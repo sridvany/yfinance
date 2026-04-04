@@ -18,6 +18,8 @@ from statsmodels.stats.stattools import jarque_bera
 from statsmodels.stats.diagnostic import breaks_cusumolsresid
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
+from statsmodels.tsa.stattools import coint
+from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
 st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
 
@@ -416,7 +418,7 @@ if symbol:
     df_clean2      = pd.DataFrame()
     dl_df          = pd.DataFrame()
 
-    tab1, tab2, tab3 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "📈 Regresyon"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "📈 Regresyon", "🔗 Eşbütünleşme"])
 
     with tab1:
 
@@ -1376,6 +1378,145 @@ if symbol:
                     st.warning(f"R² = {model_fit.rsquared:.4f} — Çok yüksek R² multicollinearity veya overfitting işareti olabilir.")
                 else:
                     st.info(f"R² = {model_fit.rsquared:.4f}")
+
+    with tab4:
+        st.subheader("🔗 Eşbütünleşme Analizi")
+        st.caption("Durağan olmayan seriler arasında gerçek uzun vadeli ilişki var mı? OLS katsayılarının güvenilirliğini doğrular.")
+
+        if "fs_results" not in st.session_state:
+            st.info("Önce **Feature Analizi** sekmesinde analizi çalıştırın.")
+        elif not clean_selected:
+            st.info("Önce **Veri İndir** sekmesinde veri yükleyin.")
+        else:
+            fs_results    = st.session_state["fs_results"]
+            reg_target    = st.session_state.get("fs_target", "Close")
+
+            # ── Veri seti seç ────────────────────────────────────
+            st.markdown("#### 1️⃣ Veri Seti")
+            coint_ds_key = st.selectbox(
+                "Hangi veri seti kullanılsın?",
+                list(fs_results.keys()),
+                index=len(fs_results) - 1,
+                key="coint_ds_key",
+            )
+            coint_res      = fs_results[coint_ds_key]
+            coint_features = coint_res["after_vif"]
+
+            if not coint_features:
+                st.warning("Bu veri setinde hayatta kalan feature yok.")
+            else:
+                st.success(f"**Target:** `{reg_target}` — **Feature'lar ({len(coint_features)}):** `{'`, `'.join(coint_features)}`")
+
+                # ── Test seç ─────────────────────────────────────
+                st.markdown("#### 2️⃣ Test Seçimi")
+                coint_method = st.radio(
+                    "Yöntem:",
+                    ["Engle-Granger (ikili — her feature ayrı ayrı)", "Johansen (çok değişkenli — tüm feature'lar birlikte)"],
+                    key="coint_method",
+                )
+
+                st.markdown("#### 3️⃣ Çalıştır")
+                if st.button("▶ Eşbütünleşme Testi Çalıştır", key="coint_run"):
+
+                    DATASETS_COINT = {
+                        "1 — Ham Veri":              df[[c for c in coint_features + [reg_target] if c in df.columns]].dropna(),
+                        "2 — OHLC Temizlenmiş":      df_clean[[c for c in coint_features + [reg_target] if c in df_clean.columns]].dropna() if not df_clean.empty else pd.DataFrame(),
+                        "3 — Tam Temizlenmiş":       df_clean2[[c for c in coint_features + [reg_target] if c in df_clean2.columns]].dropna() if not df_clean2.empty else pd.DataFrame(),
+                        "4 — Temizlenmiş ve Transforme Edilmiş": dl_df[[c for c in coint_features + [reg_target] if c in dl_df.columns]].dropna() if not dl_df.empty else pd.DataFrame(),
+                    }
+                    coint_data = DATASETS_COINT.get(coint_ds_key, pd.DataFrame())
+
+                    if coint_data.empty:
+                        st.error("Seçilen veri seti boş.")
+                    else:
+                        st.markdown("#### 4️⃣ Sonuçlar")
+
+                        if "Engle-Granger" in coint_method:
+                            # ── Engle-Granger ─────────────────────────────
+                            st.markdown("**Engle-Granger Eşbütünleşme Testi** *(her feature ile Close ikilisi)*")
+                            eg_rows = []
+                            y_eg = coint_data[reg_target].values
+                            for col in coint_features:
+                                if col not in coint_data.columns:
+                                    continue
+                                try:
+                                    x_eg = coint_data[col].values
+                                    score, pval, _ = coint(y_eg, x_eg)
+                                    cointegrated = pval < 0.05
+                                    eg_rows.append({
+                                        "Feature":         col,
+                                        "Test İstatistiği": round(score, 4),
+                                        "p-değeri":        round(pval, 4),
+                                        "Durum":           "✅ Eşbütünleşik" if cointegrated else "❌ Eşbütünleşik Değil",
+                                        "OLS Güvenilirliği": "✅ Güvenilir" if cointegrated else "❌ Sahte Regresyon Riski",
+                                    })
+                                except Exception as e:
+                                    eg_rows.append({"Feature": col, "Test İstatistiği": np.nan, "p-değeri": np.nan, "Durum": "⚠️ Hata", "OLS Güvenilirliği": "⚠️ Hata"})
+
+                            eg_df = pd.DataFrame(eg_rows)
+
+                            def _coint_color(val):
+                                if not isinstance(val, str): return ""
+                                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                return ""
+
+                            st.dataframe(
+                                eg_df.style.map(_coint_color, subset=["Durum", "OLS Güvenilirliği"]),
+                                use_container_width=True, hide_index=True,
+                            )
+
+                            coint_ok  = eg_df[eg_df["Durum"].str.startswith("✅")]["Feature"].tolist()
+                            coint_bad = eg_df[eg_df["Durum"].str.startswith("❌")]["Feature"].tolist()
+
+                            if coint_ok:
+                                st.success(f"Eşbütünleşik — OLS katsayısı güvenilir: `{'`, `'.join(coint_ok)}`")
+                            if coint_bad:
+                                st.warning(f"Eşbütünleşik değil — OLS katsayısı sahte olabilir: `{'`, `'.join(coint_bad)}` — Bu feature'larla regresyon yerine fark alarak (Return) çalış")
+
+                        else:
+                            # ── Johansen ─────────────────────────────────
+                            st.markdown("**Johansen Eşbütünleşme Testi** *(tüm feature'lar + Close birlikte)*")
+                            try:
+                                cols_j   = [c for c in coint_features if c in coint_data.columns] + [reg_target]
+                                data_j   = coint_data[cols_j].values
+                                result_j = coint_johansen(data_j, det_order=0, k_ar_diff=1)
+
+                                trace_rows = []
+                                for i in range(len(result_j.lr1)):
+                                    stat   = round(result_j.lr1[i], 4)
+                                    cv_90  = round(result_j.cvt[i, 0], 4)
+                                    cv_95  = round(result_j.cvt[i, 1], 4)
+                                    passed = stat > cv_95
+                                    trace_rows.append({
+                                        "H0 (Eşbütünleşme Sayısı ≤)": i,
+                                        "İz İstatistiği":              stat,
+                                        "Kritik Değer (%95)":          cv_95,
+                                        "Kritik Değer (%90)":          cv_90,
+                                        "Durum":                       "✅ Reddedildi" if passed else "❌ Reddedilemedi",
+                                    })
+
+                                trace_df = pd.DataFrame(trace_rows)
+
+                                def _jc(val):
+                                    if not isinstance(val, str): return ""
+                                    if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                    if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                    return ""
+
+                                st.dataframe(
+                                    trace_df.style.map(_jc, subset=["Durum"]),
+                                    use_container_width=True, hide_index=True,
+                                )
+
+                                n_coint = sum(1 for r in trace_rows if r["Durum"].startswith("✅"))
+                                if n_coint > 0:
+                                    st.success(f"**{n_coint} eşbütünleşme ilişkisi tespit edildi** — feature'lar ve Close arasında uzun vadeli gerçek ilişki var. OLS katsayıları güvenilir.")
+                                else:
+                                    st.warning("Eşbütünleşme tespit edilmedi — OLS katsayıları sahte olabilir. Return modunda regresyon önerilir.")
+
+                            except Exception as e:
+                                st.error(f"Johansen testi hatası: {e}")
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
