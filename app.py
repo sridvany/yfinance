@@ -931,53 +931,56 @@ if symbol:
                         else:
                             st.success("ARCH etkisi tespit edilmedi.")
 
-                        st.markdown("**6️⃣ Jarque-Bera Normallik Testi**")
-                        def _jbc(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["jb_df"].style.map(_jbc, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        jb_feat = [f for f in res["jb_problem"] if f != target]
-                        if jb_feat:
-                            st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Büyük örneklemde OLS dayanıklıdır; küçük örneklemde robust regresyon düşünülebilir.")
+                        if "jb_df" not in res:
+                            st.info("6️⃣-8️⃣ testler için analizi yeniden çalıştırın.")
                         else:
-                            st.success("Tüm değişkenler normal dağılıyor.")
+                            st.markdown("**6️⃣ Jarque-Bera Normallik Testi**")
+                            def _jbc(val):
+                                if not isinstance(val, str): return ""
+                                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                return ""
+                            st.dataframe(
+                                res["jb_df"].style.map(_jbc, subset=["Durum"]),
+                                use_container_width=True, hide_index=True,
+                            )
+                            jb_feat = [f for f in res["jb_problem"] if f != target]
+                            if jb_feat:
+                                st.warning(f"Normal Dağılmayan: `{'`, `'.join(jb_feat)}` — Büyük örneklemde OLS dayanıklıdır; küçük örneklemde robust regresyon düşünülebilir.")
+                            else:
+                                st.success("Tüm değişkenler normal dağılıyor.")
 
-                        st.markdown("**7️⃣ RESET Doğrusallık Testi**")
-                        def _rc(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["reset_df"].style.map(_rc, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        reset_feat = res["reset_problem"]
-                        if reset_feat:
-                            st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Polinom terim, etkileşim veya ML modeli düşünülebilir.")
-                        else:
-                            st.success("Tüm feature-target ilişkileri doğrusal.")
+                            st.markdown("**7️⃣ RESET Doğrusallık Testi**")
+                            def _rc(val):
+                                if not isinstance(val, str): return ""
+                                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                return ""
+                            st.dataframe(
+                                res["reset_df"].style.map(_rc, subset=["Durum"]),
+                                use_container_width=True, hide_index=True,
+                            )
+                            reset_feat = res["reset_problem"]
+                            if reset_feat:
+                                st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Polinom terim, etkileşim veya ML modeli düşünülebilir.")
+                            else:
+                                st.success("Tüm feature-target ilişkileri doğrusal.")
 
-                        st.markdown("**8️⃣ CUSUM Yapısal Kırılma Testi**")
-                        def _cc(val):
-                            if not isinstance(val, str): return ""
-                            if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
-                            if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
-                            return ""
-                        st.dataframe(
-                            res["cusum_df"].style.map(_cc, subset=["Durum"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        cusum_feat = [f for f in res["cusum_problem"] if f != target]
-                        if cusum_feat:
-                            st.warning(f"Yapısal Kırılma Tespit Edildi: `{'`, `'.join(cusum_feat)}` — Zaman serisi ikiye bölünüp ayrı model kurulabilir veya rolling window kullanılabilir.")
-                        else:
-                            st.success("Yapısal kırılma tespit edilmedi.")
+                            st.markdown("**8️⃣ CUSUM Yapısal Kırılma Testi**")
+                            def _cc(val):
+                                if not isinstance(val, str): return ""
+                                if val.startswith("✅"): return "background-color:#d1e7dd; color:#0a3622"
+                                if val.startswith("❌"): return "background-color:#f8d7da; color:#842029"
+                                return ""
+                            st.dataframe(
+                                res["cusum_df"].style.map(_cc, subset=["Durum"]),
+                                use_container_width=True, hide_index=True,
+                            )
+                            cusum_feat = [f for f in res["cusum_problem"] if f != target]
+                            if cusum_feat:
+                                st.warning(f"Yapısal Kırılma Tespit Edildi: `{'`, `'.join(cusum_feat)}` — Zaman serisi ikiye bölünüp ayrı model kurulabilir veya rolling window kullanılabilir.")
+                            else:
+                                st.success("Yapısal kırılma tespit edilmedi.")
 
                 # ── KARŞILAŞTIRMA ────────────────────────────────
                 st.markdown("---")
@@ -989,10 +992,10 @@ if symbol:
                     adf_total  = len(res["adf_df"])
                     lb_pass    = res["lb_df"]["Durum"].str.startswith("✅").sum()
                     arch_pass  = res["arch_df"]["Durum"].str.startswith("✅").sum()
-                    jb_pass    = res["jb_df"]["Durum"].str.startswith("✅").sum()
-                    reset_pass = res["reset_df"]["Durum"].str.startswith("✅").sum()
-                    reset_tot  = len(res["reset_df"])
-                    cusum_pass = res["cusum_df"]["Durum"].str.startswith("✅").sum()
+                    jb_pass    = res["jb_df"]["Durum"].str.startswith("✅").sum() if "jb_df" in res else "-"
+                    reset_pass = res["reset_df"]["Durum"].str.startswith("✅").sum() if "reset_df" in res else "-"
+                    reset_tot  = len(res["reset_df"]) if "reset_df" in res else "-"
+                    cusum_pass = res["cusum_df"]["Durum"].str.startswith("✅").sum() if "cusum_df" in res else "-"
                     comp_rows.append({
                         "Veri Seti":          ds_name,
                         "Başlangıç":          len(res["candidates"]),
@@ -1001,9 +1004,9 @@ if symbol:
                         "ADF Geçen":          f"{adf_pass}/{adf_total}",
                         "LB Geçen":           f"{lb_pass}/{adf_total}",
                         "ARCH Geçen":         f"{arch_pass}/{adf_total}",
-                        "JB Geçen":           f"{jb_pass}/{adf_total}",
-                        "RESET Geçen":        f"{reset_pass}/{reset_tot}",
-                        "CUSUM Geçen":        f"{cusum_pass}/{adf_total}",
+                        "JB Geçen":           f"{jb_pass}/{adf_total}" if jb_pass != "-" else "-",
+                        "RESET Geçen":        f"{reset_pass}/{reset_tot}" if reset_pass != "-" else "-",
+                        "CUSUM Geçen":        f"{cusum_pass}/{adf_total}" if cusum_pass != "-" else "-",
                         "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
                     })
 
@@ -1028,9 +1031,9 @@ if symbol:
                 any_ns      = len(advice_res["non_stat"]) > 0
                 any_lb      = len(advice_res["lb_problem"]) > 0
                 any_arch    = len(advice_res["arch_problem"]) > 0
-                any_jb      = len(advice_res["jb_problem"]) > 0
-                any_reset   = len(advice_res["reset_problem"]) > 0
-                any_cusum   = len(advice_res["cusum_problem"]) > 0
+                any_jb      = len(advice_res.get("jb_problem", [])) > 0
+                any_reset   = len(advice_res.get("reset_problem", [])) > 0
+                any_cusum   = len(advice_res.get("cusum_problem", [])) > 0
 
                 with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
                     st.markdown("""
