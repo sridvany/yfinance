@@ -1482,9 +1482,25 @@ if symbol:
                         else:
                             # ── Johansen ─────────────────────────────────
                             st.markdown("**Johansen Eşbütünleşme Testi** *(tüm feature'lar + Close birlikte)*")
+
+                            use_zscore = st.radio(
+                                "Veri ölçekleme:",
+                                ["Ham veri", "Standardize (z-score) — matris pozitif tanımlı değilse önerilir"],
+                                index=0,
+                                key="johansen_scale",
+                            )
+
                             try:
-                                cols_j   = [c for c in coint_features if c in coint_data.columns] + [reg_target]
-                                data_j   = coint_data[cols_j].values
+                                cols_j  = [c for c in coint_features if c in coint_data.columns] + [reg_target]
+                                raw_j   = coint_data[cols_j].values.astype(float)
+
+                                if "z-score" in use_zscore:
+                                    from scipy.stats import zscore as scipy_zscore
+                                    data_j = scipy_zscore(raw_j, axis=0)
+                                    st.caption("Z-score uygulandı — sadece test hesabı için, katsayıları etkilemez.")
+                                else:
+                                    data_j = raw_j
+
                                 result_j = coint_johansen(data_j, det_order=0, k_ar_diff=1)
 
                                 trace_rows = []
