@@ -32,7 +32,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 tahmin.ai veri indirici")
-st.caption("ne ekersen onu biçersin... | [📊 Çoklu Karşılaştırma](https://verilervs.streamlit.app/)")
+st.caption("ne ekersen onu biçersin...")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
