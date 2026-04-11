@@ -477,8 +477,8 @@ if symbol:
 
                 panels = [
                     ("Orijinal Seri (log)", log_close.values, "#bfdbfe", "#1d4ed8", "line"),
-                    ("Mevsimsel",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
                     ("Trend",         stl_res.trend,       "#bbf7d0", "#15803d", "line"),
+                    ("Mevsimsel",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
                     ("Artık",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
                 ]
 
