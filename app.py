@@ -448,9 +448,9 @@ if symbol:
         acf_period, _    = acf_period_estimate(np.log(close.dropna()).values, max_acf_lag, fallback_period)
 
         if acf_period != fallback_period:
-            st.caption(f"📐 ACF ile tahmin edilen periyot: **{acf_period}** (akademik varsayılan: {fallback_period})")
+            st.success(f"📐 ACF ile tahmin edilen periyot: **{acf_period}** (akademik varsayılan: {fallback_period})")
         else:
-            st.caption(f"📐 ACF belirgin tepe bulamadı, akademik varsayılan kullanılıyor: **{fallback_period}**")
+            st.error(f"📐 ACF belirgin tepe bulamadı, akademik varsayılan kullanılıyor: **{fallback_period}**")
 
         stl_period = st.number_input(
             "STL Periyodu",
