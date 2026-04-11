@@ -443,10 +443,11 @@ if symbol:
         close_clean = close.dropna()
         if len(close_clean) > stl_period * 2:
             try:
-                stl_res = STL(close_clean, period=stl_period, robust=True).fit()
+                log_close = np.log(close_clean)
+                stl_res = STL(log_close, period=stl_period, robust=True).fit()
 
                 panels = [
-                    ("Orijinal Seri", close_clean.values,  "#bfdbfe", "#1d4ed8", "line"),
+                    ("Orijinal Seri (log)", log_close.values, "#bfdbfe", "#1d4ed8", "line"),
                     ("Mevsimsel",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
                     ("Trend",         stl_res.trend,       "#bbf7d0", "#15803d", "line"),
                     ("Artık",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
