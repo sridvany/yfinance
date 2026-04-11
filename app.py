@@ -690,22 +690,20 @@ if symbol:
                     )
                     st.plotly_chart(fig_resid, use_container_width=True)
 
-                    st.markdown("**🔴 En Büyük 10 Şok (yerel z-score'a göre, ardışık günler tek olay)**")
-                    abs_z = z_score.abs().sort_values(ascending=False)
-                    selected_idx = []
-                    for idx in abs_z.index:
-                        if not selected_idx or all(abs((idx - s).days) >= 10 for s in selected_idx):
-                            selected_idx.append(idx)
-                        if len(selected_idx) == 10:
-                            break
-                    shock_vals = resid_s[selected_idx]
-                    shock_z    = z_score[selected_idx]
+                    st.markdown("**🔴 Yıl Bazında En Büyük Şoklar (yerel z-score)**")
+                    # Her yıldan en büyük 1 şok — temporal çeşitlilik garantili
+                    z_abs = z_score.abs()
+                    yearly_top = z_abs.groupby(z_abs.index.year).idxmax()
+                    yearly_top = yearly_top.dropna()
+                    shock_vals = resid_s[yearly_top]
+                    shock_z    = z_score[yearly_top]
                     shock_df = pd.DataFrame({
-                        "Tarih":       pd.DatetimeIndex(selected_idx).strftime("%Y-%m-%d"),
-                        "Artık":       shock_vals.round(5).values,
+                        "Yıl":         yearly_top.index,
+                        "Tarih":       pd.DatetimeIndex(yearly_top.values).strftime("%Y-%m-%d"),
+                        "Artık":       shock_vals.values.round(5),
                         "Yön":         ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in shock_vals.values],
-                        "Yerel Z":     shock_z.round(2).values,
-                    }).sort_values("Yerel Z", key=abs, ascending=False)
+                        "Yerel Z":     shock_z.values.round(2),
+                    }).sort_values("Yıl", ascending=False).reset_index(drop=True)
                     st.dataframe(shock_df, use_container_width=True, hide_index=True)
 
             except Exception as e:
