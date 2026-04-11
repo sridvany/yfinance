@@ -629,7 +629,7 @@ if symbol:
                     r_mean     = resid_s.mean()
 
                     # Rolling MAD: her dönem kendi yerel bazeline göre normalize edilir
-                    roll_win   = min(stl_period, len(resid_s) // 4)
+                    roll_win   = min(126, len(resid_s) // 4)
                     roll_mad   = (resid_s - resid_s.rolling(roll_win, center=True, min_periods=roll_win//2).median())                                      .abs()                                      .rolling(roll_win, center=True, min_periods=roll_win//2).median()
                     roll_std   = (roll_mad * 1.4826).fillna(roll_mad.median() * 1.4826)
 
@@ -694,7 +694,7 @@ if symbol:
                     abs_z = z_score.abs().sort_values(ascending=False)
                     selected_idx = []
                     for idx in abs_z.index:
-                        if not selected_idx or all(abs((idx - s).days) >= 20 for s in selected_idx):
+                        if not selected_idx or all(abs((idx - s).days) >= 10 for s in selected_idx):
                             selected_idx.append(idx)
                         if len(selected_idx) == 10:
                             break
