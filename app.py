@@ -559,7 +559,7 @@ if symbol:
                 with st.expander("🌊 Mevsimsellik Analizi", expanded=False):
                     seasonal_s = pd.Series(stl_res.seasonal, index=close_clean.index)
                     amp        = seasonal_s.max() - seasonal_s.min()
-                    amp_pct    = (np.exp(amp) - 1) * 100
+                    amp_pct    = (np.exp(seasonal_s.abs().mean()) - 1) * 100
                     s_max_date = seasonal_s.idxmax()
                     s_min_date = seasonal_s.idxmin()
                     roll_std   = seasonal_s.rolling(window=stl_period).std()
@@ -567,14 +567,14 @@ if symbol:
                     st.markdown("**📋 Genel Özet**")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Salınım Genişliği (log)", f"{amp:.4f}")
-                    c2.metric("Fiyat Etkisi (yaklaşık)", f"%{amp_pct:.1f}")
+                    c2.metric("Ort. Fiyat Etkisi (yaklaşık)", f"%{amp_pct:.1f}")
                     c3.metric("Periyot", f"{stl_period} bar")
 
                     st.markdown(f"""
 - **En güçlü pozitif mevsimsel etki:** {s_max_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.max():.4f}`
 - **En güçlü negatif mevsimsel etki:** {s_min_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.min():.4f}`
 - **Ortalama mutlak mevsimsel etki:** `{seasonal_s.abs().mean():.4f}` (log birim)
-- **Yorum:** Mevsimsel bileşen fiyatın yaklaşık **%{amp_pct:.1f}**'ini açıklıyor. {"Bu yüksek bir oran — döngüsel alım/satım stratejileri için kullanılabilir." if amp_pct > 10 else "Bu düşük bir oran — mevsimsellik bu varlık için belirleyici değil."}
+- **Yorum:** Ortalama mevsimsel fiyat etkisi yaklaşık **%{amp_pct:.1f}**. {"Bu yüksek bir oran — döngüsel alım/satım stratejileri için kullanılabilir." if amp_pct > 5 else "Bu düşük bir oran — mevsimsellik bu varlık için belirleyici değil."}
                     """)
 
                     st.markdown("**📊 Periyot Dilimine Göre Ortalama Mevsimsel Etki**")
@@ -627,7 +627,9 @@ if symbol:
                 with st.expander("⚡ Artık (Residual) Analizi", expanded=False):
                     resid_s  = pd.Series(stl_res.resid, index=close_clean.index)
                     r_mean   = resid_s.mean()
-                    r_std    = resid_s.std()
+                    # MAD tabanlı robust std (aykırı değerlere dayanıklı)
+                    r_mad    = (resid_s - resid_s.median()).abs().median()
+                    r_std    = r_mad * 1.4826  # normal dağılım için ölçek faktörü
                     sigma2   = resid_s[resid_s.abs() > 2 * r_std]
                     sigma3   = resid_s[resid_s.abs() > 3 * r_std]
                     pos_shocks = int((resid_s > 2 * r_std).sum())
@@ -636,7 +638,7 @@ if symbol:
                     st.markdown("**📋 Genel Özet**")
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Ortalama", f"{r_mean:.5f}")
-                    c2.metric("Std Sapma", f"{r_std:.4f}")
+                    c2.metric("Robust Std (MAD)", f"{r_std:.4f}")
                     c3.metric("±2σ Şok Sayısı", len(sigma2))
                     c4.metric("±3σ Şok Sayısı", len(sigma3))
 
@@ -644,13 +646,15 @@ if symbol:
 - **Pozitif şok (2σ üzeri):** {pos_shocks} adet — beklenmedik sert yükseliş
 - **Negatif şok (2σ altı):** {neg_shocks} adet — beklenmedik sert düşüş
 - **Yorum:** {"Artık bileşen büyük ölçüde sıfır etrafında — model seriyi iyi açıklıyor." if len(sigma2) < len(resid_s) * 0.05 else "Artıkta belirgin aşırı değerler var — açıklanamayan şoklar mevcut, anomali tespiti için kullanılabilir."}
+- **Not:** Sigma bantları robust std (MAD×1.4826) ile hesaplanmıştır — dev şoklar bant genişliğini bozmaz.
                     """)
 
                     st.markdown("**📊 Artık Serisi — ±2σ ve ±3σ Bantları**")
                     fig_resid = go.Figure()
-                    fig_resid.add_hrect(y0=-2*r_std, y1=2*r_std,           fillcolor="#bbf7d0", opacity=0.3, line_width=0)
-                    fig_resid.add_hrect(y0=2*r_std,  y1=resid_s.max()*1.2,  fillcolor="#fecaca", opacity=0.3, line_width=0)
-                    fig_resid.add_hrect(y0=resid_s.min()*1.2, y1=-2*r_std,  fillcolor="#fecaca", opacity=0.3, line_width=0)
+                    _ylim = max(abs(resid_s.quantile(0.999)), abs(resid_s.quantile(0.001))) * 1.3
+                    fig_resid.add_hrect(y0=-2*r_std, y1=2*r_std,  fillcolor="#bbf7d0", opacity=0.3, line_width=0)
+                    fig_resid.add_hrect(y0=2*r_std,  y1=_ylim,    fillcolor="#fecaca", opacity=0.3, line_width=0)
+                    fig_resid.add_hrect(y0=-_ylim,   y1=-2*r_std, fillcolor="#fecaca", opacity=0.3, line_width=0)
                     fig_resid.add_trace(go.Bar(
                         x=resid_s.index, y=resid_s.values,
                         marker_color=["#dc2626" if v > 2*r_std else "#15803d" if v < -2*r_std else "#7e22ce" for v in resid_s.values],
@@ -667,14 +671,22 @@ if symbol:
                     )
                     st.plotly_chart(fig_resid, use_container_width=True)
 
-                    st.markdown("**🔴 En Büyük 10 Şok (mutlak değere göre)**")
-                    top_shocks = resid_s.abs().nlargest(10)
+                    st.markdown("**🔴 En Büyük 10 Şok (mutlak değere göre, ardışık günler tek olay sayılır)**")
+                    # Ardışık günleri filtrele: min 5 bar aralık
+                    abs_resid   = resid_s.abs().sort_values(ascending=False)
+                    selected_idx = []
+                    for idx in abs_resid.index:
+                        if not selected_idx or all(abs((idx - s).days) >= 5 for s in selected_idx):
+                            selected_idx.append(idx)
+                        if len(selected_idx) == 10:
+                            break
+                    shock_vals = resid_s[selected_idx]
                     shock_df = pd.DataFrame({
-                        "Tarih":  top_shocks.index.strftime("%Y-%m-%d"),
-                        "Artık":  resid_s[top_shocks.index].round(5).values,
-                        "Yön":    ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in resid_s[top_shocks.index].values],
-                        "Sigma":  (resid_s[top_shocks.index].abs() / r_std).round(2).values,
-                    })
+                        "Tarih":  pd.DatetimeIndex(selected_idx).strftime("%Y-%m-%d"),
+                        "Artık":  shock_vals.round(5).values,
+                        "Yön":    ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in shock_vals.values],
+                        "Sigma":  (shock_vals.abs() / r_std).round(2).values,
+                    }).sort_values("Sigma", ascending=False)
                     st.dataframe(shock_df, use_container_width=True, hide_index=True)
 
             except Exception as e:
