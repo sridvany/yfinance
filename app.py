@@ -422,11 +422,40 @@ if symbol:
 
         # ── STL Ayrışım Grafiği ───────────────────────────────────
         st.subheader("STL — Seasonal-Trend Decomposition using Loess")
-        default_period = INTERVAL_STL_PERIOD.get(interval, 12)
+
+        # ACF ile otomatik periyot tahmini
+        @st.cache_data
+        def acf_period_estimate(values, max_lag, fallback):
+            try:
+                from statsmodels.tsa.stattools import acf
+                n_lags = min(max_lag, len(values) // 2 - 1)
+                if n_lags < 4:
+                    return fallback, None
+                acf_vals = acf(values, nlags=n_lags, fft=True)
+                # lag=0 hariç ilk belirgin tepe: komşularından büyük olan laglar
+                peaks = [
+                    i for i in range(2, len(acf_vals) - 1)
+                    if acf_vals[i] > acf_vals[i - 1] and acf_vals[i] > acf_vals[i + 1] and acf_vals[i] > 0.05
+                ]
+                if peaks:
+                    return int(peaks[0]), acf_vals
+                return fallback, acf_vals
+            except Exception:
+                return fallback, None
+
+        fallback_period  = INTERVAL_STL_PERIOD.get(interval, 12)
+        max_acf_lag      = min(fallback_period * 3, len(close.dropna()) // 2 - 1, 600)
+        acf_period, _    = acf_period_estimate(np.log(close.dropna()).values, max_acf_lag, fallback_period)
+
+        if acf_period != fallback_period:
+            st.caption(f"📐 ACF ile tahmin edilen periyot: **{acf_period}** (akademik varsayılan: {fallback_period})")
+        else:
+            st.caption(f"📐 ACF belirgin tepe bulamadı, akademik varsayılan kullanılıyor: **{fallback_period}**")
+
         stl_period = st.number_input(
             "STL Periyodu",
             min_value=2, max_value=1000,
-            value=default_period, step=1,
+            value=acf_period, step=1,
             help=(
                 "Akademik varsayılanlar: "
                 "1d → 252 (işlem günü/yıl), "
