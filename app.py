@@ -444,35 +444,85 @@ if symbol:
         if len(close_clean) > stl_period * 2:
             try:
                 stl_res = STL(close_clean, period=stl_period, robust=True).fit()
+
                 panels = [
-                    ("Gözlem",    close_clean.values),
-                    ("Trend",     stl_res.trend),
-                    ("Mevsimsel", stl_res.seasonal),
-                    ("Artık",     stl_res.resid),
+                    ("Orijinal Seri", close_clean.values,  "#bfdbfe", "#1d4ed8", "line"),
+                    ("Mevsimsel",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
+                    ("Trend",         stl_res.trend,       "#bbf7d0", "#15803d", "line"),
+                    ("Artık",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
                 ]
+
                 fig_stl = make_subplots(
                     rows=4, cols=1,
                     shared_xaxes=True,
-                    subplot_titles=[p[0] for p in panels],
-                    vertical_spacing=0.06,
+                    vertical_spacing=0.03,
+                    row_heights=[0.30, 0.23, 0.23, 0.24],
                 )
-                colors = ["#16a34a", "#2563eb", "#d97706", "#dc2626"]
-                for i, (label, values) in enumerate(panels, start=1):
-                    fig_stl.add_trace(
-                        go.Scatter(
-                            x=close_clean.index, y=values,
-                            mode="lines",
-                            line=dict(color=colors[i - 1], width=1.2),
-                            name=label,
-                        ),
-                        row=i, col=1,
+
+                # Renkli arka plan şeritleri (paper koordinatları)
+                bg_y = [1.0, 0.72, 0.49, 0.26]   # her panel üst kenarı (yaklaşık)
+                bg_h = [0.28, 0.23, 0.23, 0.26]
+
+                shapes = []
+                for idx, (_, _, bg_color, _, _) in enumerate(panels):
+                    shapes.append(dict(
+                        type="rect",
+                        xref="paper", yref="paper",
+                        x0=0, x1=1,
+                        y0=bg_y[idx] - bg_h[idx],
+                        y1=bg_y[idx],
+                        fillcolor=bg_color,
+                        opacity=0.4,
+                        line_width=0,
+                        layer="below",
+                    ))
+
+                for i, (label, values, bg_color, line_color, chart_type) in enumerate(panels, start=1):
+                    if chart_type == "bar":
+                        fig_stl.add_trace(
+                            go.Bar(
+                                x=close_clean.index, y=values,
+                                marker_color=line_color,
+                                marker_opacity=0.7,
+                                name=label,
+                            ),
+                            row=i, col=1,
+                        )
+                    else:
+                        fig_stl.add_trace(
+                            go.Scatter(
+                                x=close_clean.index, y=values,
+                                mode="lines",
+                                line=dict(color=line_color, width=1.2),
+                                name=label,
+                            ),
+                            row=i, col=1,
+                        )
+
+                    # Panel başlığını sol üst köşeye annotation olarak ekle
+                    fig_stl.add_annotation(
+                        text=f"<b>{label}</b>",
+                        xref="paper", yref="paper",
+                        x=0.01,
+                        y=bg_y[i - 1] - 0.01,
+                        showarrow=False,
+                        font=dict(size=12, color=line_color),
+                        xanchor="left", yanchor="top",
                     )
+
                 fig_stl.update_layout(
-                    height=700,
+                    height=720,
                     showlegend=False,
-                    margin=dict(l=50, r=20, t=40, b=30),
+                    shapes=shapes,
+                    margin=dict(l=60, r=30, t=20, b=40),
                     hovermode="x unified",
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
+                    bargap=0,
                 )
+                fig_stl.update_xaxes(showgrid=False)
+                fig_stl.update_yaxes(showgrid=True, gridcolor="#e5e7eb", gridwidth=0.5)
+
                 st.plotly_chart(fig_stl, use_container_width=True, config={"scrollZoom": True})
             except Exception as e:
                 st.warning(f"STL hesaplanamadı: {e}")
