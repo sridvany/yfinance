@@ -625,68 +625,87 @@ if symbol:
 
                 # ── ARTIK YORUMU ──────────────────────────────────
                 with st.expander("⚡ Artık (Residual) Analizi", expanded=False):
-                    resid_s  = pd.Series(stl_res.resid, index=close_clean.index)
-                    r_mean   = resid_s.mean()
-                    # MAD tabanlı robust std (aykırı değerlere dayanıklı)
-                    r_mad    = (resid_s - resid_s.median()).abs().median()
-                    r_std    = r_mad * 1.4826  # normal dağılım için ölçek faktörü
-                    sigma2   = resid_s[resid_s.abs() > 2 * r_std]
-                    sigma3   = resid_s[resid_s.abs() > 3 * r_std]
-                    pos_shocks = int((resid_s > 2 * r_std).sum())
-                    neg_shocks = int((resid_s < -2 * r_std).sum())
+                    resid_s    = pd.Series(stl_res.resid, index=close_clean.index)
+                    r_mean     = resid_s.mean()
+
+                    # Rolling MAD: her dönem kendi yerel bazeline göre normalize edilir
+                    roll_win   = min(stl_period, len(resid_s) // 4)
+                    roll_mad   = (resid_s - resid_s.rolling(roll_win, center=True, min_periods=roll_win//2).median())                                      .abs()                                      .rolling(roll_win, center=True, min_periods=roll_win//2).median()
+                    roll_std   = (roll_mad * 1.4826).fillna(roll_mad.median() * 1.4826)
+
+                    # z-score: her gün kendi yerel std ile normalize
+                    z_score    = resid_s / roll_std.replace(0, np.nan).ffill().bfill()
+                    sigma2     = z_score[z_score.abs() > 2]
+                    sigma3     = z_score[z_score.abs() > 3]
+                    pos_shocks = int((z_score > 2).sum())
+                    neg_shocks = int((z_score < -2).sum())
+
+                    # Global robust std (gösterim için)
+                    g_mad  = (resid_s - resid_s.median()).abs().median()
+                    r_std_global = g_mad * 1.4826
 
                     st.markdown("**📋 Genel Özet**")
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Ortalama", f"{r_mean:.5f}")
-                    c2.metric("Robust Std (MAD)", f"{r_std:.4f}")
+                    c2.metric("Medyan |Artık|", f"{resid_s.abs().median():.4f}")
                     c3.metric("±2σ Şok Sayısı", len(sigma2))
                     c4.metric("±3σ Şok Sayısı", len(sigma3))
 
                     st.markdown(f"""
 - **Pozitif şok (2σ üzeri):** {pos_shocks} adet — beklenmedik sert yükseliş
 - **Negatif şok (2σ altı):** {neg_shocks} adet — beklenmedik sert düşüş
-- **Yorum:** {"Artık bileşen büyük ölçüde sıfır etrafında — model seriyi iyi açıklıyor." if len(sigma2) < len(resid_s) * 0.05 else "Artıkta belirgin aşırı değerler var — açıklanamayan şoklar mevcut, anomali tespiti için kullanılabilir."}
-- **Not:** Sigma bantları robust std (MAD×1.4826) ile hesaplanmıştır — dev şoklar bant genişliğini bozmaz.
+- **Yorum:** {"Artık bileşen büyük ölçüde sıfır etrafında — model seriyi iyi açıklıyor." if (len(sigma2) / len(resid_s)) < 0.05 else "Artıkta belirgin aşırı değerler var — açıklanamayan şoklar mevcut, anomali tespiti için kullanılabilir."}
+- **Not:** Sigma bantları **rolling MAD** ile hesaplanmıştır — her dönem kendi yerel bazeline göre normalize edilir, yapısal kırılmalar diğer şokları bastırmaz.
                     """)
 
-                    st.markdown("**📊 Artık Serisi — ±2σ ve ±3σ Bantları**")
+                    st.markdown("**📊 Artık Serisi — Yerel ±2σ ve ±3σ Bantları**")
+                    upper2 = roll_std * 2
+                    lower2 = -roll_std * 2
+                    upper3 = roll_std * 3
+                    lower3 = -roll_std * 3
+
                     fig_resid = go.Figure()
-                    _ylim = max(abs(resid_s.quantile(0.999)), abs(resid_s.quantile(0.001))) * 1.3
-                    fig_resid.add_hrect(y0=-2*r_std, y1=2*r_std,  fillcolor="#bbf7d0", opacity=0.3, line_width=0)
-                    fig_resid.add_hrect(y0=2*r_std,  y1=_ylim,    fillcolor="#fecaca", opacity=0.3, line_width=0)
-                    fig_resid.add_hrect(y0=-_ylim,   y1=-2*r_std, fillcolor="#fecaca", opacity=0.3, line_width=0)
+                    # Bantlar çizgi olarak (dinamik, rolling)
+                    fig_resid.add_trace(go.Scatter(x=resid_s.index, y=upper2.values, mode="lines",
+                        line=dict(color="#16a34a", dash="dash", width=0.8), name="+2σ"))
+                    fig_resid.add_trace(go.Scatter(x=resid_s.index, y=lower2.values, mode="lines",
+                        line=dict(color="#16a34a", dash="dash", width=0.8), name="-2σ"))
+                    fig_resid.add_trace(go.Scatter(x=resid_s.index, y=upper3.values, mode="lines",
+                        line=dict(color="#dc2626", dash="dash", width=0.8), name="+3σ"))
+                    fig_resid.add_trace(go.Scatter(x=resid_s.index, y=lower3.values, mode="lines",
+                        line=dict(color="#dc2626", dash="dash", width=0.8), name="-3σ"))
+                    # Artık barlar: yerel z-score'a göre renklendirme
+                    bar_colors = ["#dc2626" if z > 2 else "#15803d" if z < -2 else "#7e22ce"
+                                  for z in z_score.values]
                     fig_resid.add_trace(go.Bar(
                         x=resid_s.index, y=resid_s.values,
-                        marker_color=["#dc2626" if v > 2*r_std else "#15803d" if v < -2*r_std else "#7e22ce" for v in resid_s.values],
-                        marker_opacity=0.7, name="Artık",
+                        marker_color=bar_colors, marker_opacity=0.7, name="Artık",
                     ))
-                    for sign, lbl, col in [(1,"+2σ","#16a34a"),(-1,"-2σ","#16a34a"),(1,"+3σ","#dc2626"),(-1,"-3σ","#dc2626")]:
-                        val = sign * (2 if "2" in lbl else 3) * r_std
-                        fig_resid.add_hline(y=val, line_dash="dash", line_color=col, line_width=0.8,
-                                            annotation_text=lbl, annotation_position="right")
+                    fig_resid.add_hline(y=0, line_color="black", line_width=0.5)
                     fig_resid.update_layout(
-                        height=300, showlegend=False, bargap=0,
-                        margin=dict(l=40, r=60, t=10, b=30),
+                        height=320, bargap=0,
+                        margin=dict(l=40, r=20, t=10, b=30),
                         plot_bgcolor="white", hovermode="x unified",
+                        legend=dict(orientation="h", y=1.08),
                     )
                     st.plotly_chart(fig_resid, use_container_width=True)
 
-                    st.markdown("**🔴 En Büyük 10 Şok (mutlak değere göre, ardışık günler tek olay sayılır)**")
-                    # Ardışık günleri filtrele: min 5 bar aralık
-                    abs_resid   = resid_s.abs().sort_values(ascending=False)
+                    st.markdown("**🔴 En Büyük 10 Şok (yerel z-score'a göre, ardışık günler tek olay)**")
+                    abs_z = z_score.abs().sort_values(ascending=False)
                     selected_idx = []
-                    for idx in abs_resid.index:
-                        if not selected_idx or all(abs((idx - s).days) >= 5 for s in selected_idx):
+                    for idx in abs_z.index:
+                        if not selected_idx or all(abs((idx - s).days) >= 20 for s in selected_idx):
                             selected_idx.append(idx)
                         if len(selected_idx) == 10:
                             break
                     shock_vals = resid_s[selected_idx]
+                    shock_z    = z_score[selected_idx]
                     shock_df = pd.DataFrame({
-                        "Tarih":  pd.DatetimeIndex(selected_idx).strftime("%Y-%m-%d"),
-                        "Artık":  shock_vals.round(5).values,
-                        "Yön":    ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in shock_vals.values],
-                        "Sigma":  (shock_vals.abs() / r_std).round(2).values,
-                    }).sort_values("Sigma", ascending=False)
+                        "Tarih":       pd.DatetimeIndex(selected_idx).strftime("%Y-%m-%d"),
+                        "Artık":       shock_vals.round(5).values,
+                        "Yön":         ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in shock_vals.values],
+                        "Yerel Z":     shock_z.round(2).values,
+                    }).sort_values("Yerel Z", key=abs, ascending=False)
                     st.dataframe(shock_df, use_container_width=True, hide_index=True)
 
             except Exception as e:
