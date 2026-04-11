@@ -421,7 +421,7 @@ if symbol:
         st.plotly_chart(fig_px, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
 
         # ── STL Ayrışım Grafiği ───────────────────────────────────
-        st.subheader("STL Ayrışım Grafiği")
+        st.subheader("STL — Seasonal-Trend Decomposition using Loess")
         default_period = INTERVAL_STL_PERIOD.get(interval, 12)
         stl_period = st.number_input(
             "STL Periyodu",
