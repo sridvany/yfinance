@@ -11,6 +11,7 @@ from datetime import datetime
 import base64
 from scipy import stats
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch, linear_reset
@@ -20,6 +21,7 @@ from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
+from statsmodels.tsa.seasonal import STL
 
 st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
 
@@ -93,16 +95,10 @@ def calc_supertrend(high, low, close, period=10, multiplier=3.0):
         supertrend.iloc[i] = lower_band.iloc[i] if direction.iloc[i] == 1 else upper_band.iloc[i]
     return supertrend
 
-# ============================================================
-# YENİ İNDİKATÖR FONKSİYONLARI
-# ============================================================
-
 def calc_roc(close, period=10):
-    """Rate of Change — fiyat değişim hızı (%)"""
     return ((close - close.shift(period)) / close.shift(period)) * 100
 
 def calc_stochastic(high, low, close, k_period=14, d_period=3):
-    """Stochastic Oscillator %K ve %D"""
     lowest_low   = low.rolling(window=k_period).min()
     highest_high = high.rolling(window=k_period).max()
     stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
@@ -110,38 +106,30 @@ def calc_stochastic(high, low, close, k_period=14, d_period=3):
     return stoch_k, stoch_d
 
 def calc_adx(high, low, close, period=14):
-    """Average Directional Index — trend gücü"""
     tr = pd.concat([
         high - low,
         (high - close.shift(1)).abs(),
         (low  - close.shift(1)).abs()
     ], axis=1).max(axis=1)
-
     up_move   = high - high.shift(1)
     down_move = low.shift(1) - low
-
     plus_dm  = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-
     plus_dm  = pd.Series(plus_dm,  index=close.index)
     minus_dm = pd.Series(minus_dm, index=close.index)
-
     atr_s     = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
     plus_di   = 100 * plus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr_s
     minus_di  = 100 * minus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr_s
-
     dx  = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
     adx = dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
     return adx
 
 def calc_williams_r(high, low, close, period=14):
-    """Williams %R — aşırı alım/satım"""
     highest_high = high.rolling(window=period).max()
     lowest_low   = low.rolling(window=period).min()
     return -100 * (highest_high - close) / (highest_high - lowest_low)
 
 def calc_cci(high, low, close, period=20):
-    """Commodity Channel Index — ortalamadan sapma"""
     typical_price = (high + low + close) / 3
     sma_tp  = typical_price.rolling(window=period).mean()
     mean_dev = typical_price.rolling(window=period).apply(
@@ -150,22 +138,18 @@ def calc_cci(high, low, close, period=20):
     return (typical_price - sma_tp) / (0.015 * mean_dev)
 
 def calc_obv(close, volume):
-    """On Balance Volume — hacim-fiyat uyumu"""
     direction = np.sign(close.diff()).fillna(0)
     return (direction * volume).cumsum()
 
 def calc_cmf(high, low, close, volume, period=20):
-    """Chaikin Money Flow — para akışı yönü"""
     clv = ((close - low) - (high - close)) / (high - low)
     clv = clv.replace([np.inf, -np.inf], 0).fillna(0)
     return (clv * volume).rolling(window=period).sum() / volume.rolling(window=period).sum()
 
 def calc_volume_roc(volume, period=10):
-    """Volume Rate of Change — hacim ivmesi (%)"""
     return ((volume - volume.shift(period)) / volume.shift(period)) * 100
 
 def calc_mfi(high, low, close, volume, period=14):
-    """Money Flow Index — RSI'nin hacim ağırlıklı versiyonu"""
     typical_price  = (high + low + close) / 3
     raw_money_flow = typical_price * volume
     direction      = typical_price.diff()
@@ -176,16 +160,10 @@ def calc_mfi(high, low, close, volume, period=14):
     return 100 - (100 / (1 + pos_sum / neg_sum))
 
 def calc_amihud(close, volume):
-    """Amihud İllikiditesi — |Return| / Volume, ham günlük değer"""
     ret   = np.log(close).diff().abs()
     return ret / volume.replace(0, np.nan)
 
 def calc_mec(close, window=63):
-    """Market Efficiency Coefficient
-    MEC = Var(ln(Ct / Ct-30)) / (6 × Var(ln(Ct / Ct-5)))
-    T = 30/5 = 6, pencere = 3 ay (~63 işlem günü)
-    MEC ≈ 1 → piyasa verimli/dayanıklı
-    """
     T          = 6
     ret_long   = np.log(close / close.shift(30))
     ret_short  = np.log(close / close.shift(5))
@@ -194,34 +172,21 @@ def calc_mec(close, window=63):
     return var_long / (T * var_short)
 
 def calc_corwin_schultz(high, low):
-    """Corwin-Schultz Bid-Ask Spread Tahmini
-    β = [ln(H_t / L_t)]² + [ln(H_t-1 / L_t-1)]²  — t-1 ve t kullanılır (look-ahead yok)
-    γ = [ln(max(H_t, H_t-1) / min(L_t, L_t-1))]²
-    α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
-    S = 2(e^α - 1) / (1 + e^α)
-    Negatif α → 0
-    """
     sqrt2   = np.sqrt(2)
     denom   = 3 - 2 * sqrt2
-
     log_hl      = np.log(high / low)
     log_hl2     = log_hl ** 2
     log_hl_prev = np.log(high.shift(1) / low.shift(1)) ** 2
-
     beta  = log_hl2 + log_hl_prev
-
     h2    = pd.concat([high.shift(1), high], axis=1).max(axis=1)
     l2    = pd.concat([low.shift(1),  low],  axis=1).min(axis=1)
     gamma = np.log(h2 / l2) ** 2
-
     alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / denom - np.sqrt(gamma / denom)
     alpha = alpha.clip(lower=0)
-
     spread = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
     return spread
 
 def calc_stoch_rsi(close, rsi_period=14, stoch_period=14, k_smooth=3, d_smooth=3):
-    """Stochastic RSI — RSI'ya Stochastic formülü uygulanır"""
     rsi        = calc_rsi(close, rsi_period)
     min_rsi    = rsi.rolling(window=stoch_period).min()
     max_rsi    = rsi.rolling(window=stoch_period).max()
@@ -251,6 +216,10 @@ INTERVAL_OPTIONS = {
 INTERVAL_MAX_DAYS = {
     "1m": 30, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
     "1h": 730, "1d": None, "1wk": None, "1mo": None,
+}
+INTERVAL_STL_PERIOD = {
+    "1m": 390, "2m": 195, "5m": 78, "15m": 26,
+    "30m": 13, "1h": 7, "1d": 252, "1wk": 52, "1mo": 12,
 }
 
 selected_interval_label = st.selectbox("Zaman Dilimi", list(INTERVAL_OPTIONS.keys()), index=6)
@@ -311,7 +280,6 @@ if symbol:
 
     close = df["Close"]; high = df["High"]; low = df["Low"]; volume = df["Volume"]
 
-    # Mevcut indikatörler
     df["EMA_20"]     = calc_ema(close, 20)
     df["EMA_50"]     = calc_ema(close, 50)
     df["EMA_200"]    = calc_ema(close, 200)
@@ -321,8 +289,6 @@ if symbol:
     df["BB_Upper"], df["BB_Lower"], df["BBW"] = calc_bollinger(close)
     df["Supertrend"] = calc_supertrend(high, low, close)
     df["Return"]     = close.pct_change()
-
-    # Yeni indikatörler
     df["ROC"]        = calc_roc(close)
     df["Stoch_K"], df["Stoch_D"] = calc_stochastic(high, low, close)
     df["ADX"]        = calc_adx(high, low, close)
@@ -331,12 +297,12 @@ if symbol:
     df["OBV"]        = calc_obv(close, volume)
     df["CMF"]        = calc_cmf(high, low, close, volume)
     df["Volume_ROC"] = calc_volume_roc(volume)
-    df["MFI"]          = calc_mfi(high, low, close, volume)
+    df["MFI"]        = calc_mfi(high, low, close, volume)
     df["StochRSI_K"], df["StochRSI_D"] = calc_stoch_rsi(close)
     df["Amihud"]     = calc_amihud(close, volume)
     df["MEC"]        = calc_mec(close)
-    df["CS_Spread"]      = calc_corwin_schultz(high, low)
-    df["Daily_Range"]    = high - low
+    df["CS_Spread"]  = calc_corwin_schultz(high, low)
+    df["Daily_Range"] = high - low
 
     check_cols   = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     zero_or_null = int(((df[check_cols].isnull().any(axis=1)) | (df[check_cols] == 0).any(axis=1)).sum())
@@ -394,7 +360,6 @@ if symbol:
                 if st.checkbox(label, value=True, key=f"cb_{col_name}"):
                     selected_cols.append(col_name)
 
-    # Kategoride olmayan sütunlar varsa "Diğer" altında göster
     categorized = {c for cols, _ in CATEGORIES.values() for c in cols}
     other_cols  = [c for c in df.columns if c not in categorized]
     if other_cols:
@@ -413,7 +378,6 @@ if symbol:
     # SEKMELER
     # ============================================================
 
-    # Tab1'de tanımlanacak değişkenler için varsayılan
     clean_selected = []
     df_clean2      = pd.DataFrame()
     dl_df          = pd.DataFrame()
@@ -456,10 +420,66 @@ if symbol:
         )
         st.plotly_chart(fig_px, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
 
-    # ============================================================
-    # Excel İndir
-    # ============================================================
+        # ── STL Ayrışım Grafiği ───────────────────────────────────
+        st.subheader("STL Ayrışım Grafiği")
+        default_period = INTERVAL_STL_PERIOD.get(interval, 12)
+        stl_period = st.number_input(
+            "STL Periyodu",
+            min_value=2, max_value=1000,
+            value=default_period, step=1,
+            help=(
+                "Akademik varsayılanlar: "
+                "1d → 252 (işlem günü/yıl), "
+                "1wk → 52, "
+                "1mo → 12, "
+                "1h → 7 (günlük döngü), "
+                "30m → 13, "
+                "15m → 26, "
+                "5m → 78, "
+                "2m → 195, "
+                "1m → 390"
+            ),
+        )
+        close_clean = close.dropna()
+        if len(close_clean) > stl_period * 2:
+            try:
+                stl_res = STL(close_clean, period=stl_period, robust=True).fit()
+                panels = [
+                    ("Gözlem",    close_clean.values),
+                    ("Trend",     stl_res.trend),
+                    ("Mevsimsel", stl_res.seasonal),
+                    ("Artık",     stl_res.resid),
+                ]
+                fig_stl = make_subplots(
+                    rows=4, cols=1,
+                    shared_xaxes=True,
+                    subplot_titles=[p[0] for p in panels],
+                    vertical_spacing=0.06,
+                )
+                colors = ["#16a34a", "#2563eb", "#d97706", "#dc2626"]
+                for i, (label, values) in enumerate(panels, start=1):
+                    fig_stl.add_trace(
+                        go.Scatter(
+                            x=close_clean.index, y=values,
+                            mode="lines",
+                            line=dict(color=colors[i - 1], width=1.2),
+                            name=label,
+                        ),
+                        row=i, col=1,
+                    )
+                fig_stl.update_layout(
+                    height=700,
+                    showlegend=False,
+                    margin=dict(l=50, r=20, t=40, b=30),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fig_stl, use_container_width=True, config={"scrollZoom": True})
+            except Exception as e:
+                st.warning(f"STL hesaplanamadı: {e}")
+        else:
+            st.info(f"STL için en az {stl_period * 2} satır gerekli, mevcut: {len(close_clean)}")
 
+        # ── Excel İndir ───────────────────────────────────────────
         st.subheader("İndir - Seçili Veriler")
         export_df = df[selected_cols].copy()
         export_df.index.name = "Datetime" if is_intraday else "Date"
@@ -476,15 +496,13 @@ if symbol:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # OHLC eşit satır filtreleyip indikatörleri yeniden hesapla
         ohlc_mask   = ~((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
         df_clean    = df[ohlc_mask][["Open", "High", "Low", "Close", "Volume"]].copy()
         removed_cnt = len(df) - len(df_clean)
-    
+
         if not df_clean.empty:
             _c = df_clean["Close"]; _h = df_clean["High"]; _l = df_clean["Low"]; _v = df_clean["Volume"]
-    
-            # Mevcut indikatörler
+
             df_clean["EMA_20"]     = calc_ema(_c, 20)
             df_clean["EMA_50"]     = calc_ema(_c, 50)
             df_clean["EMA_200"]    = calc_ema(_c, 200)
@@ -494,8 +512,6 @@ if symbol:
             df_clean["BB_Upper"], df_clean["BB_Lower"], df_clean["BBW"] = calc_bollinger(_c)
             df_clean["Supertrend"] = calc_supertrend(_h, _l, _c)
             df_clean["Return"]     = _c.pct_change()
-    
-            # Yeni indikatörler
             df_clean["ROC"]        = calc_roc(_c)
             df_clean["Stoch_K"], df_clean["Stoch_D"] = calc_stochastic(_h, _l, _c)
             df_clean["ADX"]        = calc_adx(_h, _l, _c)
@@ -504,23 +520,23 @@ if symbol:
             df_clean["OBV"]        = calc_obv(_c, _v)
             df_clean["CMF"]        = calc_cmf(_h, _l, _c, _v)
             df_clean["Volume_ROC"] = calc_volume_roc(_v)
-            df_clean["MFI"]          = calc_mfi(_h, _l, _c, _v)
+            df_clean["MFI"]        = calc_mfi(_h, _l, _c, _v)
             df_clean["StochRSI_K"], df_clean["StochRSI_D"] = calc_stoch_rsi(_c)
             df_clean["Amihud"]     = calc_amihud(_c, _v)
             df_clean["MEC"]        = calc_mec(_c)
-            df_clean["CS_Spread"]      = calc_corwin_schultz(_h, _l)
-            df_clean["Daily_Range"]    = _h - _l
-    
+            df_clean["CS_Spread"]  = calc_corwin_schultz(_h, _l)
+            df_clean["Daily_Range"] = _h - _l
+
             clean_selected = [c for c in selected_cols if c in df_clean.columns]
             export_clean   = df_clean[clean_selected].copy()
             export_clean.index.name = "Datetime" if is_intraday else "Date"
             export_clean   = export_clean.reset_index()
-    
+
             excel_clean = BytesIO()
             with pd.ExcelWriter(excel_clean, engine="openpyxl") as writer:
                 export_clean.to_excel(writer, index=False, sheet_name="Data")
             excel_clean.seek(0)
-    
+
             file_name_clean = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_cleaned.xlsx"
             st.download_button(
                 label=f"📥 OHLC Eşit Satırlar Çıkarılmış ({len(export_clean):,} satır, {removed_cnt:,} satır silindi)",
@@ -528,19 +544,18 @@ if symbol:
                 file_name=file_name_clean,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    
-            # 3. Excel: boş hücreli satırlar da çıkarılmış
+
             df_clean2     = df_clean[clean_selected].dropna()
             removed_nan   = len(df_clean) - len(df_clean2)
             export_clean2 = df_clean2.copy()
             export_clean2.index.name = "Datetime" if is_intraday else "Date"
             export_clean2 = export_clean2.reset_index()
-    
+
             excel_clean2 = BytesIO()
             with pd.ExcelWriter(excel_clean2, engine="openpyxl") as writer:
                 export_clean2.to_excel(writer, index=False, sheet_name="Data")
             excel_clean2.seek(0)
-    
+
             file_name_clean2 = f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_fully_cleaned.xlsx"
             st.download_button(
                 label=f"📥 OHLC Eşit + Boş Hücreli Satırlar Çıkarılmış ({len(export_clean2):,} satır, {removed_nan:,} satır daha silindi)",
@@ -548,70 +563,65 @@ if symbol:
                 file_name=file_name_clean2,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    
-            # ── DERİN ÖĞRENMEYE HAZIR VERİ SETİ ─────────────────────
+
             dl_df   = df_clean2[clean_selected].copy()
             epsilon = 1e-10
-    
+
             if "OBV" in dl_df.columns:
                 obv_diff = dl_df["OBV"].diff()
                 dl_df["OBV"] = np.log1p(obv_diff.abs()) * np.sign(obv_diff)
-    
+
             if "Amihud" in dl_df.columns:
                 dl_df["Amihud"] = dl_df["Amihud"].replace(0, epsilon)
                 dl_df["Amihud"] = np.log1p(dl_df["Amihud"] * 1e9)
-    
+
             if "Volume" in dl_df.columns:
                 dl_df["Volume"] = np.log1p(dl_df["Volume"])
-    
+
             if "Volume_ROC" in dl_df.columns:
                 dl_df["Volume_ROC"] = np.log1p(dl_df["Volume_ROC"].abs()) * np.sign(dl_df["Volume_ROC"])
-    
+
             if "CMF" in dl_df.columns:
                 dl_df["CMF"] = dl_df["CMF"].where(dl_df["CMF"] > -0.9999, np.nan).ffill()
-    
+
             if "CS_Spread" in dl_df.columns:
                 dl_df["CS_Spread"] = dl_df["CS_Spread"].replace(0, np.nan).ffill()
-    
+
             dl_df = dl_df.replace([np.inf, -np.inf], np.nan).dropna()
-    
+
             export_dl = dl_df.copy()
             export_dl.index.name = "Datetime" if is_intraday else "Date"
             export_dl = export_dl.reset_index()
-    
+
             buf_dl = BytesIO()
             with pd.ExcelWriter(buf_dl, engine="openpyxl") as writer:
                 export_dl.to_excel(writer, index=False, sheet_name="Data")
             buf_dl.seek(0)
-    
+
             st.download_button(
                 label=f"📥 Temizlenmiş ve Dönüştürülmüş Veri Seti — {len(export_dl.columns)-1} sütun, {len(export_dl):,} satır",
                 data=buf_dl.getvalue(),
                 file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_temizlenmis_ve_transforme_edilmis.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-    
+
             with st.expander("📋 Standart Dönüşüm Uygulamaları"):
                 st.markdown("""
-    | Değişken | Uygulanan Dönüşüm | Gerekçe |
-    |---|---|---|
-    | **OBV** | `diff()` → `log1p(abs) × sign` | Kümülatif serinin farkı alınır; büyük değerler log ile sıkıştırılır, yön korunur |
-    | **Amihud** | `replace(0, ε=1e-10)` → `log1p(x × 1e9)` | 1e-8 mertebesindeki çok küçük sayılar pozitif bölgeye taşınır, log1p ile ölçeklenir |
-    | **Volume** | `log1p(x)` | Hacim dağılımı sağa çarpık; log dönüşümü ölçeği dengeler |
-    | **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
-    | **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
-    | **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
-    | **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
-    | **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
-    
-    > **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
+| Değişken | Uygulanan Dönüşüm | Gerekçe |
+|---|---|---|
+| **OBV** | `diff()` → `log1p(abs) × sign` | Kümülatif serinin farkı alınır; büyük değerler log ile sıkıştırılır, yön korunur |
+| **Amihud** | `replace(0, ε=1e-10)` → `log1p(x × 1e9)` | 1e-8 mertebesindeki çok küçük sayılar pozitif bölgeye taşınır, log1p ile ölçeklenir |
+| **Volume** | `log1p(x)` | Hacim dağılımı sağa çarpık; log dönüşümü ölçeği dengeler |
+| **Volume_ROC** | `log1p(abs) × sign` | Yüzde değişim serisi çok büyük değerler alabilir; yön korunarak sıkıştırılır |
+| **CMF** | `–0.9999` sınırındaki değerler `NaN` → `ffill` | –1 sınırında sıkışan uç değerler ileri doldurma ile giderilir |
+| **CS_Spread** | `0` → `NaN` → `ffill` | Sıfır spread değerleri (hesaplanamayan günler) ileri doldurma ile giderilir |
+| **Diğer tüm değişkenler** | Ham değer (dönüşüm yok) | Zaten uygun ölçekte; MinMax scaling öncesi ek işlem gerektirmez |
+| **Sonsuz / NaN satırlar** | `replace(±inf, NaN)` → `dropna()` | Hesaplama kaynaklı bozuk satırlar tamamen çıkarılır |
+
+> **Not:** Bu adımlar MinMax ölçekleme öncesinde uygulanır. Sıkı klipleme (winsorization) kullanılmaz; değer aralığı korunarak sıkıştırılır.
                 """)
 
     with tab2:
-
-        # ============================================================
-        # FEATURE SEÇİM ANALİZİ
-        # ============================================================
 
         if not clean_selected:
             st.info("Önce **Veri İndir** sekmesinde veri yükleyin.")
@@ -620,21 +630,21 @@ if symbol:
                 "Seçilen veri setleri üzerinde Spearman Korelasyon → VIF → ADF → Ljung-Box → ARCH analizleri çalıştırılır. "
                 "Sonuçlar hem ayrı ayrı hem karşılaştırmalı gösterilir."
             )
-    
+
             target        = "Close"
             date_col_name = "Datetime" if is_intraday else "Date"
-    
+
             DATASETS = {
                 "1 — Ham Veri":              df[[c for c in clean_selected if c in df.columns]].dropna(),
                 "2 — OHLC Temizlenmiş":      df_clean[clean_selected].dropna(),
                 "3 — Tam Temizlenmiş":       df_clean2[clean_selected],
                 "4 — Temizlenmiş ve Transforme Edilmiş": dl_df,
             }
-    
+
             numeric_cols  = [c for c in clean_selected if pd.api.types.is_numeric_dtype(df[c])]
             default_idx   = numeric_cols.index("Close") if "Close" in numeric_cols else 0
             target        = st.selectbox("🎯 Hedef Değişken (Target)", numeric_cols, index=default_idx, key="fs_target")
-    
+
             dataset_options   = list(DATASETS.keys())
             selected_datasets = st.multiselect(
                 "Analiz edilecek veri setlerini seçin:",
@@ -642,7 +652,7 @@ if symbol:
                 default=dataset_options,
                 key="fs_ds_select",
             )
-    
+
             if not selected_datasets:
                 st.info("En az bir veri seti seçin.")
             else:
@@ -653,7 +663,7 @@ if symbol:
                     corr_high_thr = st.slider("Yüksek |ρ| eşiği — üstü çıkar", 0.900, 0.999, 0.995, 0.001, key="fs_corr_high", format="%.3f")
                 with col_p3:
                     vif_thr       = st.slider("VIF eşiği — üstü çıkar",         5.0, 20.0,  10.0, 0.5,    key="fs_vif_thr")
-    
+
                 if st.button("▶ Tümünü Çalıştır", key="fs_run_all"):
                     fs_results = {}
                     for ds_name in selected_datasets:
@@ -665,8 +675,7 @@ if symbol:
                             if pd.api.types.is_numeric_dtype(ds[c]) and c != target
                         ]
                         sub = ds[candidates + [target]].dropna()
-    
-                        # ── KORELASYON ──────────────────────────────
+
                         corr_vals = sub[candidates].apply(
                             lambda col: stats.spearmanr(col, sub[target])[0]
                         ).abs()
@@ -685,8 +694,7 @@ if symbol:
                         corr_tbl    = corr_vals.reset_index()
                         corr_tbl.columns = ["Feature", "|ρ| ile Close"]
                         corr_tbl = corr_tbl.sort_values("|ρ| ile Close", ascending=False)
-    
-                        # ── VIF (iterative elimination) ──────────────
+
                         remaining = after_corr.copy()
                         vif_rem   = []
                         while True:
@@ -704,7 +712,6 @@ if symbol:
                                 remaining.remove(max_col)
                             else:
                                 break
-                        # Son turu tablo için sakla
                         sub_vif = sub[remaining].dropna()
                         X       = sub_vif.values.astype(float)
                         vif_rows = []
@@ -716,8 +723,7 @@ if symbol:
                             vif_rows.append({"Feature": col, "VIF": round(v, 2)})
                         vif_df    = pd.DataFrame(vif_rows).sort_values("VIF", ascending=False)
                         after_vif = remaining
-    
-                        # ── ADF ─────────────────────────────────────
+
                         adf_rows = []
                         for col in after_vif + [target]:
                             series = ds[col].dropna()
@@ -738,8 +744,7 @@ if symbol:
                                 })
                         adf_df   = pd.DataFrame(adf_rows)
                         non_stat = adf_df[~adf_df["Durum"].str.startswith("✅")]["Feature"].tolist()
-    
-                        # ── LJUNG-BOX (Otokorelasyon) ────────────────
+
                         lb_rows = []
                         for col in after_vif + [target]:
                             series = ds[col].dropna()
@@ -756,8 +761,7 @@ if symbol:
                                 lb_rows.append({"Feature": col, "LB p-değeri": np.nan, "Durum": "⚠️ Hata"})
                         lb_df      = pd.DataFrame(lb_rows)
                         lb_problem = lb_df[lb_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-    
-                        # ── ARCH (Heteroskedasticity) ─────────────────
+
                         arch_rows = []
                         for col in after_vif + [target]:
                             series = ds[col].dropna()
@@ -773,8 +777,7 @@ if symbol:
                                 arch_rows.append({"Feature": col, "ARCH p-değeri": np.nan, "Durum": "⚠️ Hata"})
                         arch_df      = pd.DataFrame(arch_rows)
                         arch_problem = arch_df[arch_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-    
-                        # ── JARQUE-BERA (Model Artıklarının Normalliği) ──
+
                         jb_rows = []
                         try:
                             sub_jb   = ds[after_vif + [target]].dropna()
@@ -794,8 +797,7 @@ if symbol:
                             jb_rows.append({"Model": f"OLS ({len(after_vif)} feature → {target})", "JB p-değeri": np.nan, "Çarpıklık": np.nan, "Basıklık": np.nan, "Durum": "⚠️ Hata"})
                             jb_problem = []
                         jb_df = pd.DataFrame(jb_rows)
-    
-                        # ── RESET (Doğrusallık) ───────────────────────
+
                         reset_rows = []
                         sub_reset  = ds[after_vif + [target]].dropna()
                         for col in after_vif:
@@ -814,8 +816,7 @@ if symbol:
                                 reset_rows.append({"Feature": col, "RESET p-değeri": np.nan, "Durum": "⚠️ Hata"})
                         reset_df      = pd.DataFrame(reset_rows)
                         reset_problem = reset_df[reset_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-    
-                        # ── CUSUM (Yapısal Kırılma) ───────────────────
+
                         cusum_rows = []
                         for col in after_vif + [target]:
                             series = ds[col].dropna()
@@ -833,7 +834,7 @@ if symbol:
                                 cusum_rows.append({"Feature": col, "CUSUM p-değeri": np.nan, "Durum": "⚠️ Hata"})
                         cusum_df      = pd.DataFrame(cusum_rows)
                         cusum_problem = cusum_df[cusum_df["Durum"].str.startswith("❌")]["Feature"].tolist()
-    
+
                         fs_results[ds_name] = {
                             "n":            len(sub),
                             "candidates":   candidates,
@@ -857,18 +858,17 @@ if symbol:
                             "cusum_df":     cusum_df,
                             "cusum_problem": cusum_problem,
                         }
-    
+
                     st.session_state["fs_results"]      = fs_results
                     st.session_state["fs_vif_thr_used"] = vif_thr
-    
-                # ── SONUÇLAR ────────────────────────────────────────
+
                 if "fs_results" in st.session_state:
                     fs_results = st.session_state["fs_results"]
                     _vif_thr   = st.session_state.get("fs_vif_thr_used", 10.0)
-    
+
                     for ds_name, res in fs_results.items():
                         with st.expander(f"📊 {ds_name}  —  n={res['n']:,}", expanded=False):
-    
+
                             st.markdown("**1️⃣ Spearman Korelasyon Filtresi**")
                             st.dataframe(
                                 res["corr_tbl"].style.format({"|ρ| ile Close": "{:.4f}"}),
@@ -880,7 +880,7 @@ if symbol:
                                 st.warning(f"Multicollinearity → çıkar: {res['corr_high'] if res['corr_high'] else 'Yok'}")
                             with cb:
                                 st.success(f"Kalan ({len(res['after_corr'])}): {res['after_corr']}")
-    
+
                             st.markdown("**2️⃣ VIF Analizi**")
                             _t = _vif_thr
                             def _vc(val, t=_t):
@@ -897,7 +897,7 @@ if symbol:
                                 st.error(f"VIF > {_vif_thr} → çıkar: {res['vif_rem'] if res['vif_rem'] else 'Yok'}")
                             with cb:
                                 st.success(f"Kalan ({len(res['after_vif'])}): {res['after_vif']}")
-    
+
                             st.markdown("**3️⃣ ADF Durağanlık Testi**")
                             def _ac(val):
                                 if not isinstance(val, str): return ""
@@ -913,7 +913,7 @@ if symbol:
                                 st.warning(f"Durağan Olmayan: `{'`, `'.join(non_feat)}`")
                             if not res["non_stat"]:
                                 st.success("Tüm değişkenler durağan.")
-    
+
                             st.markdown("**4️⃣ Ljung-Box Otokorelasyon Testi** *(lag=10)*")
                             def _lbc(val):
                                 if not isinstance(val, str): return ""
@@ -929,7 +929,7 @@ if symbol:
                                 st.warning(f"Otokorelasyon Tespit Edildi: `{'`, `'.join(lb_feat)}` — GLS/HAC standart hata veya fark alma önerilir.")
                             else:
                                 st.success("Otokorelasyon tespit edilmedi.")
-    
+
                             st.markdown("**5️⃣ ARCH Heteroskedasticity Testi** *(lag=5)*")
                             def _archc(val):
                                 if not isinstance(val, str): return ""
@@ -945,7 +945,7 @@ if symbol:
                                 st.warning(f"ARCH Etkisi Tespit Edildi: `{'`, `'.join(arch_feat)}` — Volatilite kümelenmesi var, GARCH modelleme düşünülebilir.")
                             else:
                                 st.success("ARCH etkisi tespit edilmedi.")
-    
+
                             if "jb_df" not in res:
                                 st.info("6️⃣-8️⃣ testler için analizi yeniden çalıştırın.")
                             else:
@@ -963,7 +963,7 @@ if symbol:
                                     st.warning("Model artıkları normal dağılmıyor — Durağan/zayıf bağımlı serilerde CLT geçerlidir; ADF/ARCH sorunları mevcutsa HAC olmadan normallik varsayımına dayanılamaz.")
                                 else:
                                     st.success("Model artıkları normal dağılıyor.")
-    
+
                                 st.markdown("**7️⃣ RESET Doğrusallık Testi**")
                                 def _rc(val):
                                     if not isinstance(val, str): return ""
@@ -979,7 +979,7 @@ if symbol:
                                     st.warning(f"Doğrusal Olmayan İlişki: `{'`, `'.join(reset_feat)}` — Finansal zaman serilerinde doğrusallık nadiren sağlanır; OLS katsayıları yaklaşık yorumlanmalıdır. Rejim değişikliği şüphesi varsa TAR/Markov Switching düşünülebilir.")
                                 else:
                                     st.success("Tüm feature-target ilişkileri doğrusal.")
-    
+
                                 st.markdown("**8️⃣ CUSUM Yapısal Kırılma Testi**")
                                 def _cc(val):
                                     if not isinstance(val, str): return ""
@@ -995,11 +995,10 @@ if symbol:
                                     st.warning(f"Yapısal Kırılma Tespit Edildi: `{'`, `'.join(cusum_feat)}` — Zaman serisi ikiye bölünüp ayrı model kurulabilir veya rolling window kullanılabilir.")
                                 else:
                                     st.success("Yapısal kırılma tespit edilmedi.")
-    
-                    # ── KARŞILAŞTIRMA ────────────────────────────────
+
                     st.markdown("---")
                     st.markdown("### 📊 Karşılaştırma")
-    
+
                     comp_rows = []
                     for ds_name, res in fs_results.items():
                         adf_pass   = res["adf_df"]["Durum"].str.startswith("✅").sum()
@@ -1024,9 +1023,9 @@ if symbol:
                             "CUSUM Geçen":        f"{cusum_pass}/{adf_total}" if cusum_pass != "-" else "-",
                             "Hayatta Kalanlar":   ", ".join(res["after_vif"]),
                         })
-    
+
                     st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
-    
+
                     if len(fs_results) > 1:
                         all_survivors = [set(res["after_vif"]) for res in fs_results.values()]
                         common        = set.intersection(*all_survivors)
@@ -1034,8 +1033,7 @@ if symbol:
                             st.success(f"**Tüm veri setlerinde ortak hayatta kalanlar ({len(common)}):** `{'`, `'.join(sorted(common))}`")
                         else:
                             st.warning("Tüm veri setlerinde ortak hayatta kalan feature yok.")
-    
-                    # ── MODEL TAVSİYESİ ───────────────────────────────
+
                     advice_key = st.selectbox(
                         "Tavsiye için veri seti seçin:",
                         list(fs_results.keys()),
@@ -1049,18 +1047,18 @@ if symbol:
                     any_jb      = len(advice_res.get("jb_problem", [])) > 0
                     any_reset   = len(advice_res.get("reset_problem", [])) > 0
                     any_cusum   = len(advice_res.get("cusum_problem", [])) > 0
-    
+
                     with st.expander("💡 Test Sonuçlarına Göre Model Tavsiyesi", expanded=True):
                         st.markdown("""
-    | Test | Sonuç | Regresyon Etkisi | Tavsiye |
-    |---|---|---|---|
-    | **ADF (Durağanlık)** | {} | Durağan olmayan seri sahte regresyon üretir | {} |
-    | **Ljung-Box (Otokorelasyon)** | {} | Standart hatalar yanlış, t-istatistikleri güvenilmez | {} |
-    | **ARCH (Heteroskedasticity)** | {} | Varyans sabit değil, OLS verimsiz kalır | {} |
-    | **Jarque-Bera (Normallik)** | {} | Küçük örneklemde katsayı testi güvenilmezleşir | {} |
-    | **RESET (Doğrusallık)** | {} | Lineer model ilişkiyi eksik yakalar | {} |
-    | **CUSUM (Yapısal Kırılma)** | {} | Katsayılar zaman içinde değişiyor, model kararsız | {} |
-    """.format(
+| Test | Sonuç | Regresyon Etkisi | Tavsiye |
+|---|---|---|---|
+| **ADF (Durağanlık)** | {} | Durağan olmayan seri sahte regresyon üretir | {} |
+| **Ljung-Box (Otokorelasyon)** | {} | Standart hatalar yanlış, t-istatistikleri güvenilmez | {} |
+| **ARCH (Heteroskedasticity)** | {} | Varyans sabit değil, OLS verimsiz kalır | {} |
+| **Jarque-Bera (Normallik)** | {} | Küçük örneklemde katsayı testi güvenilmezleşir | {} |
+| **RESET (Doğrusallık)** | {} | Lineer model ilişkiyi eksik yakalar | {} |
+| **CUSUM (Yapısal Kırılma)** | {} | Katsayılar zaman içinde değişiyor, model kararsız | {} |
+""".format(
                             "❌ Sorun var" if any_ns    else "✅ Temiz",
                             "Fark alma (`diff`) veya log-return kullan" if any_ns else "İşlem gerekmez",
                             "❌ Sorun var" if any_lb    else "✅ Temiz",
@@ -1074,18 +1072,18 @@ if symbol:
                             "❌ Sorun var" if any_cusum else "✅ Temiz",
                             "Rolling window veya zaman dilimine göre ayrı model kur" if any_cusum else "Katsayılar zaman içinde stabil",
                         ))
-    
+
                         st.markdown("---")
                         st.markdown("#### 🎯 Önerilen Yaklaşım")
-    
+
                         problems = sum([any_ns, any_lb, any_arch, any_jb, any_reset, any_cusum])
-    
+
                         if problems == 0:
                             st.success("""
-    **Tüm testler temiz.**
-    
-    - Klasik OLS regresyon doğrudan uygulanabilir
-    - ML / Derin öğrenme doğrudan kullanılabilir — normallik, doğrusallık ve multicollinearity varsayımları zaten geçerli değil; durağanlık ve yapısal kararlılık da sağlandığından concept drift riski düşük
+**Tüm testler temiz.**
+
+- Klasik OLS regresyon doğrudan uygulanabilir
+- ML / Derin öğrenme doğrudan kullanılabilir — normallik, doğrusallık ve multicollinearity varsayımları zaten geçerli değil; durağanlık ve yapısal kararlılık da sağlandığından concept drift riski düşük
                             """)
                         else:
                             msg = "**Tespit edilen sorunlar ve öneriler:**\n\n"
@@ -1110,11 +1108,10 @@ if symbol:
                             if any_arch:
                                 msg += "- ℹ️ ARCH etkisi LSTM/Transformer gibi sequence modellerinde window boyutu seçimini etkileyebilir\n"
                             st.warning(msg)
-    
-                    # ── SONUÇ & EXCEL İNDİR ──────────────────────────
+
                     st.markdown("---")
                     st.markdown("### 🏁 Sonuç — Seçilen Feature'lar")
-    
+
                     dl_key = st.selectbox(
                         "İndirilecek veri setini seçin:",
                         list(fs_results.keys()),
@@ -1125,12 +1122,12 @@ if symbol:
                     final_features = ref_res["after_vif"]
                     fs_df          = DATASETS[dl_key]
                     all_candidates = ref_res["candidates"]
-    
+
                     st.info(
                         f"**Hayatta kalan feature'lar — {dl_key}"
                         f" ({len(final_features)}):** `{'`, `'.join(final_features)}`"
                     )
-    
+
                     st.caption("İndirilecek sütunları seçin (Close her zaman dahildir):")
                     export_candidates = [target] + [f for f in all_candidates if f in fs_df.columns]
                     final_selected    = [target]
@@ -1144,16 +1141,16 @@ if symbol:
                                 checked  = st.checkbox(col_name, value=disabled, key=f"fs_cb_{col_name}", disabled=disabled)
                                 if checked and col_name not in final_selected:
                                     final_selected.append(col_name)
-    
+
                     export_final = fs_df[final_selected].copy()
                     export_final.index.name = date_col_name
                     export_final = export_final.reset_index()
-    
+
                     buf_final = BytesIO()
                     with pd.ExcelWriter(buf_final, engine="openpyxl") as writer:
                         export_final.to_excel(writer, index=False, sheet_name="Data")
                     buf_final.seek(0)
-    
+
                     st.download_button(
                         label=f"📥 Temizlenmiş ve Transforme Edilmiş Veri Seti — Seçili Feature'lar ({len(final_selected)} sütun, {len(export_final):,} satır)",
                         data=buf_final.getvalue(),
