@@ -706,6 +706,188 @@ if symbol:
                     }).sort_values("Yıl", ascending=False).reset_index(drop=True)
                     st.dataframe(shock_df, use_container_width=True, hide_index=True)
 
+                # ── DECOMPOSİTİON TEYİDİ ─────────────────────────
+                st.subheader("🔎 Decomposition Teyidi")
+
+                # --- 1. Kruskal-Wallis ---
+                with st.expander("1️⃣ Kruskal-Wallis Testi — Mevsimsellik İstatistiksel Olarak Anlamlı mı?", expanded=False):
+                    from scipy.stats import kruskal
+                    try:
+                        seasonal_s2 = pd.Series(stl_res.seasonal, index=close_clean.index)
+                        if interval in ("1d", "1wk"):
+                            groups = [seasonal_s2[seasonal_s2.index.month == m].values for m in range(1, 13)]
+                            group_names = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
+                            group_label = "ay"
+                        elif interval in ("1h", "30m", "15m", "5m", "2m", "1m"):
+                            groups = [seasonal_s2[seasonal_s2.index.dayofweek == d].values for d in range(5)]
+                            group_names = ["Pzt","Sal","Çar","Per","Cum"]
+                            group_label = "gün"
+                        else:
+                            groups = [seasonal_s2[seasonal_s2.index.quarter == q].values for q in range(1, 5)]
+                            group_names = ["Q1","Q2","Q3","Q4"]
+                            group_label = "çeyrek"
+
+                        groups = [g for g in groups if len(g) > 1]
+                        stat, pval = kruskal(*groups)
+
+                        if pval < 0.01:
+                            yorum = f"✅ **Güçlü istatistiksel kanıt** (p={pval:.4f} < 0.01) — {group_label} grupları arasında anlamlı fark var. Mevsimsellik tesadüf değil."
+                        elif pval < 0.05:
+                            yorum = f"⚠️ **Zayıf istatistiksel kanıt** (p={pval:.4f}, 0.01–0.05 arası) — mevsimsellik muhtemelen gerçek ama güven sınırda."
+                        else:
+                            yorum = f"❌ **İstatistiksel kanıt yok** (p={pval:.4f} > 0.05) — {group_label} grupları arasında anlamlı fark bulunamadı. Mevsimsel kalıp tesadüf olabilir."
+
+                        # En güçlü ve zayıf ay/gün
+                        group_means = {group_names[i]: groups[i].mean() for i in range(len(groups))}
+                        en_guclu = max(group_means, key=group_means.get)
+                        en_zayif = min(group_means, key=group_means.get)
+
+                        st.markdown(f"""
+**Kruskal-Wallis H İstatistiği:** `{stat:.4f}`
+**p-değeri:** `{pval:.6f}`
+
+{yorum}
+
+**En güçlü mevsimsel {group_label}:** {en_guclu} (ort. `{group_means[en_guclu]:.4f}`)
+**En zayıf mevsimsel {group_label}:** {en_zayif} (ort. `{group_means[en_zayif]:.4f}`)
+
+> Kruskal-Wallis parametrik olmayan bir testtir — normal dağılım varsayımı gerektirmez, finansal veri için uygundur.
+                        """)
+                    except Exception as e:
+                        st.warning(f"Kruskal-Wallis hesaplanamadı: {e}")
+
+                # --- 2. Çoklu Sembol Karşılaştırma ---
+                with st.expander("2️⃣ Çoklu Sembol Karşılaştırma — Şoklar Sistematik mi, Spesifik mi?", expanded=False):
+                    comp_symbols_raw = st.text_input(
+                        "Karşılaştırılacak semboller (virgülle ayır)",
+                        placeholder="Örn: PGSUS.IS, XU100.IS, USD/TRY",
+                        key="comp_symbols_input"
+                    )
+                    if st.button("▶ Karşılaştır", key="comp_run"):
+                        comp_symbols = [s.strip().upper() for s in comp_symbols_raw.split(",") if s.strip()]
+                        if not comp_symbols:
+                            st.warning("En az bir sembol girin.")
+                        else:
+                            # Ana sembolün artık şok tarihleri (|z| > 2)
+                            shock_dates = set(z_score[z_score.abs() > 2].index.normalize())
+
+                            results_text = []
+                            for csym in comp_symbols:
+                                try:
+                                    cticker = yf.Ticker(csym)
+                                    if is_intraday:
+                                        chist = cticker.history(period=f"{max_days}d", interval=interval, actions=False)
+                                    else:
+                                        chist = cticker.history(period="max", interval=interval, actions=False)
+                                    if chist.index.tz is not None:
+                                        chist.index = chist.index.tz_localize(None)
+                                    cmask = (chist.index.date >= start_date) & (chist.index.date <= end_date)
+                                    cclose = chist.loc[cmask, "Close"].dropna()
+                                    if len(cclose) < stl_period * 2:
+                                        results_text.append(f"**{csym}:** Yetersiz veri ({len(cclose)} bar)")
+                                        continue
+                                    clog = np.log(cclose)
+                                    cstl = STL(clog, period=stl_period, robust=True).fit()
+                                    cresid = pd.Series(cstl.resid, index=cclose.index)
+                                    croll_mad = (cresid - cresid.rolling(126, center=True, min_periods=63).median()).abs().rolling(126, center=True, min_periods=63).median()
+                                    croll_std = (croll_mad * 1.4826).fillna(croll_mad.median() * 1.4826)
+                                    cz = cresid / croll_std.replace(0, np.nan).ffill().bfill()
+                                    cshock_dates = set(cz[cz.abs() > 2].index.normalize())
+
+                                    overlap = shock_dates & cshock_dates
+                                    if len(shock_dates) > 0:
+                                        overlap_pct = len(overlap) / len(shock_dates) * 100
+                                    else:
+                                        overlap_pct = 0
+
+                                    if overlap_pct > 50:
+                                        yorum_c = "🔴 **Yüksek örtüşme** — şoklar büyük ölçüde sistematik (piyasa geneli olay)"
+                                    elif overlap_pct > 25:
+                                        yorum_c = "🟡 **Orta örtüşme** — hem sistematik hem varlığa özgü etkenler var"
+                                    else:
+                                        yorum_c = "🟢 **Düşük örtüşme** — şoklar büyük ölçüde bu varlığa özgü"
+
+                                    results_text.append(f"""
+**{csym}** — Örtüşme: `%{overlap_pct:.1f}` ({len(overlap)} ortak şok / {len(shock_dates)} toplam şok)
+{yorum_c}
+""")
+                                except Exception as e:
+                                    results_text.append(f"**{csym}:** Hata — {e}")
+
+                            for r in results_text:
+                                st.markdown(r)
+                                st.divider()
+
+                # --- 3. Farklı Periyot Testi ---
+                with st.expander("3️⃣ Farklı Periyot Testi — Mevsimsel Kalıp Tutarlı mı?", expanded=False):
+                    if st.button("▶ Periyot Testi Çalıştır", key="period_test_run"):
+                        test_periods = [p for p in [63, 126, 252, 504] if len(close_clean) > p * 2]
+                        if len(test_periods) < 2:
+                            st.warning("Yeterli veri yok — en az 2 periyot test edilebilmeli.")
+                        else:
+                            period_results = []
+                            for tp in test_periods:
+                                try:
+                                    tp_stl = STL(np.log(close_clean), period=tp, robust=True).fit()
+                                    tp_seas = pd.Series(tp_stl.seasonal, index=close_clean.index)
+                                    tp_amp  = tp_seas.max() - tp_seas.min()
+                                    tp_pct  = (np.exp(tp_seas.abs().mean()) - 1) * 100
+
+                                    if interval in ("1d", "1wk"):
+                                        tp_group = tp_seas.groupby(tp_seas.index.month).mean()
+                                        tp_peak  = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"][tp_group.idxmax() - 1]
+                                        tp_trough = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"][tp_group.idxmin() - 1]
+                                    else:
+                                        tp_peak  = str(tp_seas.idxmax().date())
+                                        tp_trough = str(tp_seas.idxmin().date())
+
+                                    period_results.append({
+                                        "periyot": tp,
+                                        "amp": tp_amp,
+                                        "pct": tp_pct,
+                                        "peak": tp_peak,
+                                        "trough": tp_trough,
+                                    })
+                                except Exception:
+                                    pass
+
+                            if len(period_results) < 2:
+                                st.warning("Yeterli sonuç üretilemedi.")
+                            else:
+                                # Tutarlılık kontrolü
+                                peaks   = [r["peak"] for r in period_results]
+                                troughs = [r["trough"] for r in period_results]
+                                peak_consistent   = len(set(peaks)) == 1
+                                trough_consistent = len(set(troughs)) == 1
+                                amps = [r["amp"] for r in period_results]
+                                amp_cv = np.std(amps) / np.mean(amps) if np.mean(amps) > 0 else 0
+
+                                lines = []
+                                for r in period_results:
+                                    lines.append(
+                                        f"- **Periyot {r['periyot']}:** Amplitüd=`{r['amp']:.4f}`, "
+                                        f"Ort. Etki≈`%{r['pct']:.1f}`, "
+                                        f"Zirve={r['peak']}, Dip={r['trough']}"
+                                    )
+                                st.markdown("\n".join(lines))
+                                st.markdown("---")
+
+                                if peak_consistent and trough_consistent:
+                                    tutarlilik = "✅ **Yüksek tutarlılık** — tüm periyotlarda zirve ve dip aynı dönemde. Mevsimsel kalıp gerçek ve kararlı."
+                                elif peak_consistent or trough_consistent:
+                                    tutarlilik = "⚠️ **Kısmi tutarlılık** — zirve veya dip dönemleri periyota göre değişiyor. Mevsimsel kalıp hassas ama tam kararlı değil."
+                                else:
+                                    tutarlilik = "❌ **Düşük tutarlılık** — farklı periyotlar farklı zirve/dip veriyor. STL modeli bu veri için mevsimsel kalıbı tutarlı bulamamış."
+
+                                if amp_cv < 0.2:
+                                    amp_yorum = f"Amplitüd varyasyonu düşük (CV=`{amp_cv:.2f}`) — güçlü sinyal."
+                                elif amp_cv < 0.5:
+                                    amp_yorum = f"Amplitüd varyasyonu orta (CV=`{amp_cv:.2f}`) — periyot seçimi sonucu etkiliyor."
+                                else:
+                                    amp_yorum = f"Amplitüd varyasyonu yüksek (CV=`{amp_cv:.2f}`) — periyot seçimine çok duyarlı, dikkatli yorumla."
+
+                                st.markdown(f"{tutarlilik}\n\n{amp_yorum}")
+
             except Exception as e:
                 st.warning(f"STL hesaplanamadı: {e}")
         else:
