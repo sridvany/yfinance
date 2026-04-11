@@ -554,6 +554,129 @@ if symbol:
                 fig_stl.update_yaxes(showgrid=True, gridcolor="#e5e7eb", gridwidth=0.5)
 
                 st.plotly_chart(fig_stl, use_container_width=True, config={"scrollZoom": True})
+
+                # ── MEVSİMSELLİK YORUMU ───────────────────────────
+                with st.expander("🌊 Mevsimsellik Analizi", expanded=False):
+                    seasonal_s = pd.Series(stl_res.seasonal, index=close_clean.index)
+                    amp        = seasonal_s.max() - seasonal_s.min()
+                    amp_pct    = (np.exp(amp) - 1) * 100
+                    s_max_date = seasonal_s.idxmax()
+                    s_min_date = seasonal_s.idxmin()
+                    roll_std   = seasonal_s.rolling(window=stl_period).std()
+
+                    st.markdown("**📋 Genel Özet**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Salınım Genişliği (log)", f"{amp:.4f}")
+                    c2.metric("Fiyat Etkisi (yaklaşık)", f"%{amp_pct:.1f}")
+                    c3.metric("Periyot", f"{stl_period} bar")
+
+                    st.markdown(f"""
+- **En güçlü pozitif mevsimsel etki:** {s_max_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.max():.4f}`
+- **En güçlü negatif mevsimsel etki:** {s_min_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.min():.4f}`
+- **Ortalama mutlak mevsimsel etki:** `{seasonal_s.abs().mean():.4f}` (log birim)
+- **Yorum:** Mevsimsel bileşen fiyatın yaklaşık **%{amp_pct:.1f}**'ini açıklıyor. {"Bu yüksek bir oran — döngüsel alım/satım stratejileri için kullanılabilir." if amp_pct > 10 else "Bu düşük bir oran — mevsimsellik bu varlık için belirleyici değil."}
+                    """)
+
+                    st.markdown("**📊 Periyot Dilimine Göre Ortalama Mevsimsel Etki**")
+                    if interval in ("1d", "1wk"):
+                        group_label = "Ay"
+                        group_key   = seasonal_s.index.month
+                        tick_labels = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
+                    elif interval in ("1h", "30m", "15m", "5m", "2m", "1m"):
+                        group_label = "Haftanın Günü"
+                        group_key   = seasonal_s.index.dayofweek
+                        tick_labels = ["Pzt","Sal","Çar","Per","Cum"]
+                    else:
+                        group_label = "Çeyrek"
+                        group_key   = seasonal_s.index.quarter
+                        tick_labels = ["Q1","Q2","Q3","Q4"]
+
+                    group_mean  = seasonal_s.groupby(group_key).mean()
+                    bar_colors  = ["#15803d" if v >= 0 else "#dc2626" for v in group_mean.values]
+                    fig_seas_bar = go.Figure(go.Bar(
+                        x=list(range(len(group_mean))), y=group_mean.values,
+                        marker_color=bar_colors,
+                        text=[f"{v:.4f}" for v in group_mean.values],
+                        textposition="outside",
+                    ))
+                    fig_seas_bar.add_hline(y=0, line_color="black", line_width=0.8)
+                    fig_seas_bar.update_layout(
+                        height=300,
+                        xaxis=dict(tickvals=list(range(len(group_mean))), ticktext=tick_labels[:len(group_mean)], title=group_label),
+                        yaxis=dict(title="Ort. Mevsimsel Etki (log)"),
+                        margin=dict(l=40, r=20, t=20, b=40),
+                        plot_bgcolor="white",
+                    )
+                    st.plotly_chart(fig_seas_bar, use_container_width=True)
+
+                    st.markdown("**📈 Mevsimsel Gücün Zaman İçindeki Değişimi** *(rolling std)*")
+                    fig_roll = go.Figure(go.Scatter(
+                        x=roll_std.index, y=roll_std.values,
+                        mode="lines", line=dict(color="#c2410c", width=1.2),
+                    ))
+                    fig_roll.update_layout(
+                        height=220, margin=dict(l=40, r=20, t=10, b=30),
+                        yaxis_title="Std (log)", plot_bgcolor="white", hovermode="x unified",
+                    )
+                    st.plotly_chart(fig_roll, use_container_width=True)
+                    _rd = roll_std.dropna()
+                    trend_dir = "güçleniyor 📈" if _rd.iloc[-1] > _rd.iloc[len(_rd)//2] else "zayıflıyor 📉"
+                    st.caption(f"Mevsimsel etki son dönemde **{trend_dir}**.")
+
+                # ── ARTIK YORUMU ──────────────────────────────────
+                with st.expander("⚡ Artık (Residual) Analizi", expanded=False):
+                    resid_s  = pd.Series(stl_res.resid, index=close_clean.index)
+                    r_mean   = resid_s.mean()
+                    r_std    = resid_s.std()
+                    sigma2   = resid_s[resid_s.abs() > 2 * r_std]
+                    sigma3   = resid_s[resid_s.abs() > 3 * r_std]
+                    pos_shocks = int((resid_s > 2 * r_std).sum())
+                    neg_shocks = int((resid_s < -2 * r_std).sum())
+
+                    st.markdown("**📋 Genel Özet**")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Ortalama", f"{r_mean:.5f}")
+                    c2.metric("Std Sapma", f"{r_std:.4f}")
+                    c3.metric("±2σ Şok Sayısı", len(sigma2))
+                    c4.metric("±3σ Şok Sayısı", len(sigma3))
+
+                    st.markdown(f"""
+- **Pozitif şok (2σ üzeri):** {pos_shocks} adet — beklenmedik sert yükseliş
+- **Negatif şok (2σ altı):** {neg_shocks} adet — beklenmedik sert düşüş
+- **Yorum:** {"Artık bileşen büyük ölçüde sıfır etrafında — model seriyi iyi açıklıyor." if len(sigma2) < len(resid_s) * 0.05 else "Artıkta belirgin aşırı değerler var — açıklanamayan şoklar mevcut, anomali tespiti için kullanılabilir."}
+                    """)
+
+                    st.markdown("**📊 Artık Serisi — ±2σ ve ±3σ Bantları**")
+                    fig_resid = go.Figure()
+                    fig_resid.add_hrect(y0=-2*r_std, y1=2*r_std,           fillcolor="#bbf7d0", opacity=0.3, line_width=0)
+                    fig_resid.add_hrect(y0=2*r_std,  y1=resid_s.max()*1.2,  fillcolor="#fecaca", opacity=0.3, line_width=0)
+                    fig_resid.add_hrect(y0=resid_s.min()*1.2, y1=-2*r_std,  fillcolor="#fecaca", opacity=0.3, line_width=0)
+                    fig_resid.add_trace(go.Bar(
+                        x=resid_s.index, y=resid_s.values,
+                        marker_color=["#dc2626" if v > 2*r_std else "#15803d" if v < -2*r_std else "#7e22ce" for v in resid_s.values],
+                        marker_opacity=0.7, name="Artık",
+                    ))
+                    for sign, lbl, col in [(1,"+2σ","#16a34a"),(-1,"-2σ","#16a34a"),(1,"+3σ","#dc2626"),(-1,"-3σ","#dc2626")]:
+                        val = sign * (2 if "2" in lbl else 3) * r_std
+                        fig_resid.add_hline(y=val, line_dash="dash", line_color=col, line_width=0.8,
+                                            annotation_text=lbl, annotation_position="right")
+                    fig_resid.update_layout(
+                        height=300, showlegend=False, bargap=0,
+                        margin=dict(l=40, r=60, t=10, b=30),
+                        plot_bgcolor="white", hovermode="x unified",
+                    )
+                    st.plotly_chart(fig_resid, use_container_width=True)
+
+                    st.markdown("**🔴 En Büyük 10 Şok (mutlak değere göre)**")
+                    top_shocks = resid_s.abs().nlargest(10)
+                    shock_df = pd.DataFrame({
+                        "Tarih":  top_shocks.index.strftime("%Y-%m-%d"),
+                        "Artık":  resid_s[top_shocks.index].round(5).values,
+                        "Yön":    ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in resid_s[top_shocks.index].values],
+                        "Sigma":  (resid_s[top_shocks.index].abs() / r_std).round(2).values,
+                    })
+                    st.dataframe(shock_df, use_container_width=True, hide_index=True)
+
             except Exception as e:
                 st.warning(f"STL hesaplanamadı: {e}")
         else:
