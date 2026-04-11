@@ -872,12 +872,26 @@ if symbol:
                                 st.markdown("\n".join(lines))
                                 st.markdown("---")
 
-                                if peak_consistent and trough_consistent:
-                                    tutarlilik = "✅ **Yüksek tutarlılık** — tüm periyotlarda zirve ve dip aynı dönemde. Mevsimsel kalıp gerçek ve kararlı."
-                                elif peak_consistent or trough_consistent:
-                                    tutarlilik = "⚠️ **Kısmi tutarlılık** — zirve veya dip dönemleri periyota göre değişiyor. Mevsimsel kalıp hassas ama tam kararlı değil."
+                                # Çoğunluk bazlı tutarlılık — tek aykırı periyot sonucu bozmaz
+                                from collections import Counter
+                                peak_counts   = Counter(peaks)
+                                trough_counts = Counter(troughs)
+                                peak_majority   = peak_counts.most_common(1)[0][1]    # en çok tekrar eden zirvenin sayısı
+                                trough_majority = trough_counts.most_common(1)[0][1]
+                                n_periods = len(period_results)
+                                dominant_peak   = peak_counts.most_common(1)[0][0]
+                                dominant_trough = trough_counts.most_common(1)[0][0]
+
+                                if peak_majority >= n_periods * 0.75 and trough_majority >= n_periods * 0.75:
+                                    tutarlilik = f"✅ **Yüksek tutarlılık** — periyotların büyük çoğunluğu aynı zirve ({dominant_peak}) ve dip ({dominant_trough}) dönemini gösteriyor. Mevsimsel kalıp kararlı."
+                                elif peak_majority >= n_periods * 0.5 or trough_majority >= n_periods * 0.5:
+                                    tutarlilik = f"⚠️ **Kısmi tutarlılık** — baskın kalıp: zirve={dominant_peak}, dip={dominant_trough}. Uzun periyotlar (252+) örtüşüyorsa bu kalıba güvenilebilir; kısa periyotlar (63) gürültüye duyarlıdır."
                                 else:
-                                    tutarlilik = "❌ **Düşük tutarlılık** — farklı periyotlar farklı zirve/dip veriyor. STL modeli bu veri için mevsimsel kalıbı tutarlı bulamamış."
+                                    tutarlilik = "❌ **Düşük tutarlılık** — hiçbir periyotta ortak kalıp oluşmuyor. STL bu veri için mevsimselliği tutarlı bulamıyor."
+
+                                # Kısa periyot uyarısı
+                                if 63 in [r["periyot"] for r in period_results]:
+                                    tutarlilik += "\n\n> ⚠️ **Not:** 63 bar periyodu gürültüye çok duyarlıdır — kısa dönem dalgalanmaları mevsimsel kalıp olarak algılanabilir. 252+ periyot sonuçlarına daha fazla ağırlık verin."
 
                                 if amp_cv < 0.2:
                                     amp_yorum = f"Amplitüd varyasyonu düşük (CV=`{amp_cv:.2f}`) — güçlü sinyal."
