@@ -23,11 +23,11 @@ from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 from statsmodels.tsa.seasonal import STL
 
-st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
+st.set_page_config(page_title="tahmin.ai veri indirici", layout="wide")
 
 st.markdown("""
 <style>
-    .block-container {max-width: 720px; padding-top: 2rem;}
+    .block-container {padding-top: 2rem;}
     .stDownloadButton > button {width: 100%; background-color: #0d6efd; color: white; font-weight: 600;}
     .info-box {background: #f0f2f6; border-radius: 8px; padding: 12px 16px; margin: 8px 0; font-size: 0.95em;}
 </style>
@@ -486,7 +486,7 @@ if symbol:
                     rows=4, cols=1,
                     shared_xaxes=True,
                     vertical_spacing=0.03,
-                    row_heights=[0.30, 0.23, 0.23, 0.24],
+                    row_heights=[0.25, 0.25, 0.25, 0.25],
                 )
 
                 # Renkli arka plan şeritleri (paper koordinatları)
@@ -542,6 +542,7 @@ if symbol:
 
                 fig_stl.update_layout(
                     height=720,
+                    width=720,
                     showlegend=False,
                     margin=dict(l=60, r=30, t=20, b=40),
                     hovermode="x unified",
