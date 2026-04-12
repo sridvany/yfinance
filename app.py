@@ -476,7 +476,7 @@ if symbol:
                 stl_res = STL(log_close, period=stl_period, robust=True).fit()
 
                 panels = [
-                    ("Observed (log)", log_close.values, "#bfdbfe", "#1d4ed8", "line"),
+                    ("Observed", close_clean.values, "#bfdbfe", "#1d4ed8", "line"),
                     ("Trend",         stl_res.trend,       "#bbf7d0", "#15803d", "line"),
                     ("Seasonal",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
                     ("Residual",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
