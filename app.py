@@ -543,7 +543,6 @@ if symbol:
                 fig_stl.update_layout(
                     height=720,
                     showlegend=False,
-                    shapes=shapes,
                     margin=dict(l=60, r=30, t=20, b=40),
                     hovermode="x unified",
                     plot_bgcolor="white",
