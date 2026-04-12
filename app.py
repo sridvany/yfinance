@@ -476,10 +476,10 @@ if symbol:
                 stl_res = STL(log_close, period=stl_period, robust=True).fit()
 
                 panels = [
-                    ("Orijinal Seri (log)", log_close.values, "#bfdbfe", "#1d4ed8", "line"),
+                    ("Observed (log)", log_close.values, "#bfdbfe", "#1d4ed8", "line"),
                     ("Trend",         stl_res.trend,       "#bbf7d0", "#15803d", "line"),
-                    ("Mevsimsel",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
-                    ("Artık",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
+                    ("Seasonal",     stl_res.seasonal,    "#fed7aa", "#c2410c", "line"),
+                    ("Residual",         stl_res.resid,       "#e9d5ff", "#7e22ce", "bar"),
                 ]
 
                 fig_stl = make_subplots(
@@ -678,7 +678,7 @@ if symbol:
                                   for z in z_score.values]
                     fig_resid.add_trace(go.Bar(
                         x=resid_s.index, y=resid_s.values,
-                        marker_color=bar_colors, marker_opacity=0.7, name="Artık",
+                        marker_color=bar_colors, marker_opacity=0.7, name="Residual",
                     ))
                     fig_resid.add_hline(y=0, line_color="black", line_width=0.5)
                     fig_resid.update_layout(
@@ -699,7 +699,7 @@ if symbol:
                     shock_df = pd.DataFrame({
                         "Yıl":         yearly_top.index,
                         "Tarih":       pd.DatetimeIndex(yearly_top.values).strftime("%Y-%m-%d"),
-                        "Artık":       shock_vals.values.round(5),
+                        "Residual":       shock_vals.values.round(5),
                         "Yön":         ["🔴 Negatif Şok" if v < 0 else "🟢 Pozitif Şok" for v in shock_vals.values],
                         "Yerel Z":     shock_z.values.round(2),
                     }).sort_values("Yıl", ascending=False).reset_index(drop=True)
