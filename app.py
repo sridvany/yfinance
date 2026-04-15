@@ -619,26 +619,26 @@ if symbol:
                             .dropna()
                         )
                         monthly_ret.index = monthly_ret.index.to_period("M")
-                        pivot = monthly_ret.groupby([monthly_ret.index.year, monthly_ret.index.month]).mean()
-                        pivot_df = pivot.unstack(level=1)
-                        pivot_df.columns = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
-                        avg_row = pd.DataFrame(pivot_df.mean()).T
-                        avg_row.index = ["Ort."]
-                        pivot_display = pd.concat([pivot_df, avg_row])
-
-                        def color_cell(val):
-                            if pd.isna(val): return ""
-                            color = "#d1fae5" if val >= 0 else "#fee2e2"
-                            return f"background-color:{color}"
-
-                        st.markdown("**📅 Aylık Getiri Eğilim Tablosu** *(gerçek fiyat değişimi, %)*")
-                        st.dataframe(
-                            pivot_display.style
-                                .format(lambda v: f"{v*100:.1f}%" if not pd.isna(v) else "—")
-                                .map(color_cell),
-                            use_container_width=True,
+                        month_avg = monthly_ret.groupby(monthly_ret.index.month).mean()
+                        bar_colors_ret = ["#15803d" if v >= 0 else "#dc2626" for v in month_avg.values]
+                        fig_ret_bar = go.Figure(go.Bar(
+                            x=list(range(len(month_avg))),
+                            y=month_avg.values * 100,
+                            marker_color=bar_colors_ret,
+                            text=[f"{v*100:.2f}%" for v in month_avg.values],
+                            textposition="outside",
+                        ))
+                        fig_ret_bar.add_hline(y=0, line_color="black", line_width=0.8)
+                        fig_ret_bar.update_layout(
+                            height=300,
+                            xaxis=dict(tickvals=list(range(12)), ticktext=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"], title="Ay"),
+                            yaxis=dict(title="Ort. Aylık Getiri (%)"),
+                            margin=dict(l=40, r=20, t=20, b=40),
+                            plot_bgcolor="white",
                         )
-                        st.caption("Son satır tüm yılların aylık ortalamasıdır. Yeşil = pozitif, kırmızı = negatif getiri.")
+                        st.markdown("**📅 Aylık Ortalama Getiri Eğilimi** *(tüm yılların ortalaması, %)*")
+                        st.plotly_chart(fig_ret_bar, use_container_width=True)
+                        st.caption("Gerçek fiyat değişiminin aylık ortalaması. Mevsimsel bileşenden bağımsız.")
 
                     st.markdown("**📈 Mevsimsel Gücün Zaman İçindeki Değişimi** *(rolling std)*")
                     fig_roll = go.Figure(go.Scatter(
