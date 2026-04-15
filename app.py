@@ -33,7 +33,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 tahmin.ai veri indirici")
+st.title("📊 yfinance veri indirici")
 st.caption("ne ekersen onu biçersin...")
 
 # ============================================================
