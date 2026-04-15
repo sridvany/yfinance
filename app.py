@@ -635,7 +635,7 @@ if symbol:
                         st.dataframe(
                             pivot_display.style
                                 .format(lambda v: f"{v*100:.1f}%" if not pd.isna(v) else "—")
-                                .applymap(color_cell),
+                                .map(color_cell),
                             use_container_width=True,
                         )
                         st.caption("Son satır tüm yılların aylık ortalamasıdır. Yeşil = pozitif, kırmızı = negatif getiri.")
