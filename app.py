@@ -609,6 +609,37 @@ if symbol:
                     )
                     st.plotly_chart(fig_seas_bar, use_container_width=True)
 
+                    # ── Aylık Gerçek Getiri Tablosu ───────────────────────────
+                    if interval in ("1d", "1wk"):
+                        monthly_ret = (
+                            close_clean
+                            .resample("ME")
+                            .last()
+                            .pct_change()
+                            .dropna()
+                        )
+                        monthly_ret.index = monthly_ret.index.to_period("M")
+                        pivot = monthly_ret.groupby([monthly_ret.index.year, monthly_ret.index.month]).mean()
+                        pivot_df = pivot.unstack(level=1)
+                        pivot_df.columns = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
+                        avg_row = pd.DataFrame(pivot_df.mean()).T
+                        avg_row.index = ["Ort."]
+                        pivot_display = pd.concat([pivot_df, avg_row])
+
+                        def color_cell(val):
+                            if pd.isna(val): return ""
+                            color = "#d1fae5" if val >= 0 else "#fee2e2"
+                            return f"background-color:{color}"
+
+                        st.markdown("**📅 Aylık Getiri Eğilim Tablosu** *(gerçek fiyat değişimi, %)*")
+                        st.dataframe(
+                            pivot_display.style
+                                .format(lambda v: f"{v*100:.1f}%" if not pd.isna(v) else "—")
+                                .applymap(color_cell),
+                            use_container_width=True,
+                        )
+                        st.caption("Son satır tüm yılların aylık ortalamasıdır. Yeşil = pozitif, kırmızı = negatif getiri.")
+
                     st.markdown("**📈 Mevsimsel Gücün Zaman İçindeki Değişimi** *(rolling std)*")
                     fig_roll = go.Figure(go.Scatter(
                         x=roll_std.index, y=roll_std.values,
