@@ -3701,11 +3701,18 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                 "Ort. Kayıp (%)":  round(stats["avg_loss"], 2),
                 "Max DD (%)":      round(stats["max_dd"],   2),
                 # pyarrow inf değerleri sorun çıkarıyor → None kullan, tabloda "∞" olarak formatla
-                "Profit Factor":   round(stats["pf"], 2) if stats["pf"] != float("inf") else None,
+                "Profit Factor":   (None if (stats["pf"] is None or
+                                              not np.isfinite(float(stats["pf"]))) 
+                                     else round(float(stats["pf"]), 2)),
             })
 
         if algo_results:
             algo_df = pd.DataFrame(algo_results)
+            # Güvenlik: Profit Factor kolonu kesinlikle float olsun (inf → NaN)
+            if "Profit Factor" in algo_df.columns:
+                algo_df["Profit Factor"] = pd.to_numeric(
+                    algo_df["Profit Factor"], errors="coerce"
+                ).replace([np.inf, -np.inf], np.nan)
             active  = algo_df[algo_df["Trade"] > 0].copy()
             if not active.empty:
                 best = active.loc[active["Getiri (%)"].idxmax()]
