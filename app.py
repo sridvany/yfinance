@@ -4048,4 +4048,4 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                 )
 
     else:
-        st.error("Veri çekilemedi. Ticker veya internet bağlantısını kontrol edin.")
+        st.error("Veri çekilemedi. Ticker veya internet bağlantısını kontrol edin.") 
