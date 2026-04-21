@@ -3700,9 +3700,8 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                 "Ort. Kazanç (%)": round(stats["avg_win"],  2),
                 "Ort. Kayıp (%)":  round(stats["avg_loss"], 2),
                 "Max DD (%)":      round(stats["max_dd"],   2),
-                # pyarrow inf/string karışımı ile hata veriyor → tek tip float,
-                # ∞ değerler görsel olarak formatla gösterilecek
-                "Profit Factor":   round(stats["pf"], 2) if stats["pf"] != float("inf") else float("inf"),
+                # pyarrow inf değerleri sorun çıkarıyor → None kullan, tabloda "∞" olarak formatla
+                "Profit Factor":   round(stats["pf"], 2) if stats["pf"] != float("inf") else None,
             })
 
         if algo_results:
@@ -3720,10 +3719,10 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                     if val > 0: return "color: #00ff00"
                     if val < 0: return "color: #ff4b4b"
                 return ""
-            # Profit Factor'ü inf durumunda "∞" olarak göster ama kolon float kalsın
+            # None/NaN (inf durumu) için "∞" göster, diğer durumlarda 2 ondalıklı float
             def _fmt_pf(v):
                 try:
-                    if np.isinf(float(v)):
+                    if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
                         return "∞"
                     return f"{float(v):.2f}"
                 except (ValueError, TypeError):
