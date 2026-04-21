@@ -1,10 +1,7 @@
 streamlit
+streamlit-autorefresh
 yfinance
 pandas
 numpy
-matplotlib
-scipy
-openpyxl
-plotly 
-scikit-learn
-statsmodels
+plotly
+requests
