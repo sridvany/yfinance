@@ -3700,7 +3700,9 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                 "Ort. Kazanç (%)": round(stats["avg_win"],  2),
                 "Ort. Kayıp (%)":  round(stats["avg_loss"], 2),
                 "Max DD (%)":      round(stats["max_dd"],   2),
-                "Profit Factor":   round(stats["pf"], 2) if stats["pf"] != float("inf") else "∞",
+                # pyarrow inf/string karışımı ile hata veriyor → tek tip float,
+                # ∞ değerler görsel olarak formatla gösterilecek
+                "Profit Factor":   round(stats["pf"], 2) if stats["pf"] != float("inf") else float("inf"),
             })
 
         if algo_results:
@@ -3718,8 +3720,20 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                     if val > 0: return "color: #00ff00"
                     if val < 0: return "color: #ff4b4b"
                 return ""
-            st.dataframe(algo_df.style.map(ret_color, subset=["Getiri (%)"]),
-                         use_container_width=True, hide_index=True)
+            # Profit Factor'ü inf durumunda "∞" olarak göster ama kolon float kalsın
+            def _fmt_pf(v):
+                try:
+                    if np.isinf(float(v)):
+                        return "∞"
+                    return f"{float(v):.2f}"
+                except (ValueError, TypeError):
+                    return str(v)
+            st.dataframe(
+                algo_df.style
+                    .map(ret_color, subset=["Getiri (%)"])
+                    .format({"Profit Factor": _fmt_pf}),
+                use_container_width=True, hide_index=True
+            )
         else:
             st.info("Algoritma performansı hesaplanamadı.")
 
