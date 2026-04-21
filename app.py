@@ -3236,8 +3236,37 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
 
         lk = safe_scalar(last["KAMA"])
         if not np.isnan(lk):
+            # 1) Fiyat-KAMA ilişkisi + yüzde uzaklık
+            dist_pct_k = (last_close - lk) / lk * 100
+            if last_close > lk:
+                rel_k = f"Fiyat {last_close:.2f} > KAMA {lk:.2f} (+%{dist_pct_k:.2f})"
+            elif last_close < lk:
+                rel_k = f"Fiyat {last_close:.2f} < KAMA {lk:.2f} ({dist_pct_k:+.2f}%)"
+            else:
+                rel_k = f"Fiyat = KAMA ({lk:.2f})"
+
+            # 2) Efficiency Ratio (ER) — piyasanın trend gücü
+            # ER = |fiyat[t] - fiyat[t-N]| / son N bar'ın toplam mutlak değişimi
+            if len(close) >= kama_period + 1:
+                c_arr = close.values.astype(float)
+                direction  = abs(c_arr[-1] - c_arr[-kama_period - 1])
+                volatility = float(np.sum(np.abs(np.diff(c_arr[-kama_period - 1:]))))
+                er = 0.0 if volatility == 0 else direction / volatility
+                if er > 0.5:
+                    er_desc = f"ER: {er:.2f} (güçlü trend 🔥)"
+                elif er > 0.2:
+                    er_desc = f"ER: {er:.2f} (orta momentum)"
+                else:
+                    er_desc = f"ER: {er:.2f} (yatay/gürültü ⚠️)"
+            else:
+                er_desc = ""
+
+            kama_desc = rel_k
+            if er_desc:
+                kama_desc += f" | {er_desc}"
+
             res.append([trend_dec("AL" if last_close > lk else "SAT", last_ath),
-                        f"KAMA ({kama_period},{kama_fast},{kama_slow})", f"KAMA: {lk:.2f}"])
+                        f"KAMA ({kama_period},{kama_fast},{kama_slow})", kama_desc])
         else:
             res.append(["N/A", "KAMA", "Yetersiz veri."])
 
@@ -3293,9 +3322,52 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
 
         llrc = safe_scalar(last["Sig_LRC"])
         llm  = safe_scalar(last["LRC_Mid"])
-        if not np.isnan(llm):
+        llu  = safe_scalar(last["LRC_Upper"])
+        lll  = safe_scalar(last["LRC_Lower"])
+        if not np.isnan(llm) and not np.isnan(llu) and not np.isnan(lll):
+            # 1) Kanal içi pozisyon
+            if last_close > llu:
+                pos_lrc = f"Fiyat {last_close:.2f} ÜST kanal üstünde ({llu:.2f}) ❌ aşırı alım"
+            elif last_close < lll:
+                pos_lrc = f"Fiyat {last_close:.2f} ALT kanal altında ({lll:.2f}) ✅ aşırı satım"
+            else:
+                # Kanal içinde — orta çizgiye yakınlık
+                if last_close > llm:
+                    pct_mid = (last_close - llm) / llm * 100
+                    pos_lrc = f"Fiyat {last_close:.2f} kanal içinde (orta üstü, +%{pct_mid:.2f})"
+                else:
+                    pct_mid = (llm - last_close) / llm * 100
+                    pos_lrc = f"Fiyat {last_close:.2f} kanal içinde (orta altı, -%{pct_mid:.2f})"
+
+            # 2) Slope yönü (regresyon eğimi — trend matematik ölçüsü)
+            lrc_period = p_lrc["lrc_period"]
+            if len(close) >= lrc_period:
+                y_slope = close.values[-lrc_period:].astype(float)
+                x_slope = np.arange(lrc_period)
+                slope, _ = np.polyfit(x_slope, y_slope, 1)
+                # Slope'u bar başına % değişime çevir (daha anlamlı)
+                slope_pct = slope / llm * 100 if llm > 0 else 0.0
+                if slope > 0:
+                    slope_desc = f"Slope: +{slope:.3f} ↗ (yükselen, bar başı +%{slope_pct:.3f})"
+                elif slope < 0:
+                    slope_desc = f"Slope: {slope:.3f} ↘ (alçalan, bar başı %{slope_pct:.3f})"
+                else:
+                    slope_desc = "Slope: 0 → (yatay)"
+            else:
+                slope_desc = ""
+
+            # 3) Bant genişliği (volatilite göstergesi)
+            bant_width = llu - lll
+            bant_desc  = f"Bant: ±{bant_width/2:.1f}"
+
+            # Birleştir
+            parts = [pos_lrc]
+            if slope_desc: parts.append(slope_desc)
+            parts.append(bant_desc)
+            lrc_desc = " | ".join(parts)
+
             dec = "AL" if llrc == 1 else ("SAT" if llrc == -1 else "TUT")
-            res.append([dec, f"LR Channel (σ={p_lrc['lrc_std_mult']})", f"Orta: {llm:.2f}"])
+            res.append([dec, f"LR Channel (σ={p_lrc['lrc_std_mult']})", lrc_desc])
         else:
             res.append(["N/A", "LR Channel", "Yetersiz veri."])
 
