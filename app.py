@@ -3700,19 +3700,11 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                 "Ort. Kazanç (%)": round(stats["avg_win"],  2),
                 "Ort. Kayıp (%)":  round(stats["avg_loss"], 2),
                 "Max DD (%)":      round(stats["max_dd"],   2),
-                # pyarrow inf değerleri sorun çıkarıyor → None kullan, tabloda "∞" olarak formatla
-                "Profit Factor":   (None if (stats["pf"] is None or
-                                              not np.isfinite(float(stats["pf"]))) 
-                                     else round(float(stats["pf"]), 2)),
+                # Profit Factor geçici olarak kaldırıldı (pyarrow sorunu)
             })
 
         if algo_results:
             algo_df = pd.DataFrame(algo_results)
-            # Güvenlik: Profit Factor kolonu kesinlikle float olsun (inf → NaN)
-            if "Profit Factor" in algo_df.columns:
-                algo_df["Profit Factor"] = pd.to_numeric(
-                    algo_df["Profit Factor"], errors="coerce"
-                ).replace([np.inf, -np.inf], np.nan)
             active  = algo_df[algo_df["Trade"] > 0].copy()
             if not active.empty:
                 best = active.loc[active["Getiri (%)"].idxmax()]
@@ -3726,18 +3718,8 @@ Görsel bir **çoklu-teyit sistemi** olarak tasarlanmış. Tek bir sinyale deği
                     if val > 0: return "color: #00ff00"
                     if val < 0: return "color: #ff4b4b"
                 return ""
-            # None/NaN (inf durumu) için "∞" göster, diğer durumlarda 2 ondalıklı float
-            def _fmt_pf(v):
-                try:
-                    if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
-                        return "∞"
-                    return f"{float(v):.2f}"
-                except (ValueError, TypeError):
-                    return str(v)
             st.dataframe(
-                algo_df.style
-                    .map(ret_color, subset=["Getiri (%)"])
-                    .format({"Profit Factor": _fmt_pf}),
+                algo_df.style.map(ret_color, subset=["Getiri (%)"]),
                 use_container_width=True, hide_index=True
             )
         else:
