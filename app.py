@@ -323,7 +323,7 @@ if symbol:
     # ============================================================
     # Makro Varlıklarla Korelasyon
     # ============================================================
-    st.subheader("Makro Varlıklarla Close Fiyat Korelasyonu")
+    st.subheader("Varlıklarla Close Fiyat Korelasyonu")
     st.caption("Seçilen tarih aralığında, ortak günler üzerinden hesaplanır.")
 
     MACRO_ASSETS = {
@@ -333,6 +333,11 @@ if symbol:
         "Brent Petrol (BZ=F)":      "BZ=F",
         "EUR/USD (EURUSD=X)":       "EURUSD=X",
         "BIST100":       "XU100.IS",
+        "Korku Endeksi":       "^VIX",
+        "MSCI Dünya":       "^990100-USD-STRD",
+        "BITCOIN":       "BTC-USD",
+        
+        
     }
 
     @st.cache_data(ttl=3600, show_spinner=False)
