@@ -5,3 +5,4 @@ numpy
 plotly
 streamlit-autorefresh
 requests
+matplotlib
