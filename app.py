@@ -333,7 +333,7 @@ if symbol:
         "Brent Petrol (BZ=F)":      "BZ=F",
         "EUR/USD (EURUSD=X)":       "EURUSD=X",
         "BIST30":       "XU030.IS",
-        "BIST100":       "XU0100.IS",
+        "BIST100":       "XU100.IS",
     }
 
     @st.cache_data(ttl=3600, show_spinner=False)
