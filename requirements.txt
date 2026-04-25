@@ -2,8 +2,8 @@ streamlit
 yfinance
 pandas
 numpy
-plotly
-streamlit-autorefresh
-requests
 matplotlib
 scipy
+plotly
+statsmodels
+openpyxl
