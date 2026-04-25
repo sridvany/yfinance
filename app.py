@@ -332,7 +332,6 @@ if symbol:
         "Dolar Endeksi (DX-Y.NYB)": "DX-Y.NYB",
         "Brent Petrol (BZ=F)":      "BZ=F",
         "EUR/USD (EURUSD=X)":       "EURUSD=X",
-        "BIST30":       "XU030.IS",
         "BIST100":       "XU100.IS",
     }
 
