@@ -323,7 +323,7 @@ if symbol:
     # ============================================================
     # Makro Varlıklarla Korelasyon
     # ============================================================
-    st.subheader("Varlıklarla Close Fiyat Korelasyonu")
+    st.subheader("Varlıklarla Fiyat Korelasyonu")
     st.caption("Seçilen tarih aralığında, ortak günler üzerinden hesaplanır.")
 
     MACRO_ASSETS = {
