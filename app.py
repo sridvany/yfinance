@@ -399,8 +399,9 @@ if symbol:
         use_container_width=True, hide_index=True,
     )
     st.caption(
-        "**Pearson** doğrusal ilişkiyi, **Spearman** sıralamaya dayalı (monotonik) ilişkiyi ölçer. "
-        "İkisi arasında büyük fark varsa ilişki doğrusal değildir. "
+        "**Pearson** \"X %1 artarsa Y % kaç artar\" sorusunu, "
+        "**Spearman** \"X artarsa Y de artıyor mu\" sorusunu cevaplar. "
+        "Pearson büyüklüğe, Spearman yöne bakar. "
         "|ρ| ≥ 0.7 güçlü, 0.3–0.7 orta, < 0.3 zayıf kabul edilir."
     )
 
