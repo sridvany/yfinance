@@ -1,7 +1,7 @@
 streamlit
-streamlit-autorefresh
 yfinance
 pandas
 numpy
 plotly
+streamlit-autorefresh
 requests
