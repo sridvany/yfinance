@@ -321,6 +321,90 @@ if symbol:
     """, unsafe_allow_html=True)
 
     # ============================================================
+    # Makro Varlıklarla Korelasyon
+    # ============================================================
+    st.subheader("Makro Varlıklarla Close Fiyat Korelasyonu")
+    st.caption("Seçilen tarih aralığında, ortak günler üzerinden hesaplanır.")
+
+    MACRO_ASSETS = {
+        "Altın (GC=F)":     "GC=F",
+        "S&P 500 (^GSPC)":  "^GSPC",
+        "Dolar Endeksi (DX-Y.NYB)": "DX-Y.NYB",
+        "Brent Petrol (BZ=F)":      "BZ=F",
+        "EUR/USD (EURUSD=X)":       "EURUSD=X",
+    }
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def fetch_macro_close(sym, start, end, intv):
+        try:
+            t = yf.Ticker(sym)
+            h = t.history(start=start, end=end, interval=intv, actions=False)
+            if h.empty:
+                return None
+            if h.index.tz is not None:
+                h.index = h.index.tz_localize(None)
+            return h["Close"]
+        except Exception:
+            return None
+
+    with st.spinner("Makro veriler çekiliyor..."):
+        corr_rows = []
+        base_close = df["Close"]
+        # Bitiş tarihine +1 gün ekle (yfinance end exclusive)
+        end_fetch = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).date()
+
+        for label, sym in MACRO_ASSETS.items():
+            macro_close = fetch_macro_close(sym, start_date, end_fetch, interval)
+            if macro_close is None or macro_close.empty:
+                corr_rows.append({
+                    "Varlık": label, "Sembol": sym,
+                    "Pearson": np.nan, "Spearman": np.nan,
+                    "Ortak Bar": 0,
+                })
+                continue
+
+            joined = pd.concat([base_close, macro_close], axis=1, join="inner").dropna()
+            joined.columns = ["base", "macro"]
+            n_common = len(joined)
+
+            if n_common < 5:
+                pearson_v = np.nan
+                spearman_v = np.nan
+            else:
+                pearson_v = joined["base"].corr(joined["macro"], method="pearson")
+                spearman_v = joined["base"].corr(joined["macro"], method="spearman")
+
+            corr_rows.append({
+                "Varlık": label, "Sembol": sym,
+                "Pearson": round(pearson_v, 4) if not pd.isna(pearson_v) else np.nan,
+                "Spearman": round(spearman_v, 4) if not pd.isna(spearman_v) else np.nan,
+                "Ortak Bar": n_common,
+            })
+
+    corr_df = pd.DataFrame(corr_rows)
+
+    def _corr_color(val):
+        if not isinstance(val, (int, float)) or pd.isna(val):
+            return "color: #888888"
+        if val >= 0.7:   return "background-color:#d1e7dd; color:#0a3622; font-weight:600"
+        if val >= 0.3:   return "background-color:#fff3cd; color:#664d03"
+        if val <= -0.7:  return "background-color:#f8d7da; color:#842029; font-weight:600"
+        if val <= -0.3:  return "background-color:#ffe5d0; color:#8a3a00"
+        return ""
+
+    st.dataframe(
+        corr_df.style
+            .format({"Pearson": "{:.4f}", "Spearman": "{:.4f}"}, na_rep="—")
+            .map(_corr_color, subset=["Pearson", "Spearman"]),
+        use_container_width=True, hide_index=True,
+    )
+    st.caption(
+        "**Pearson** doğrusal ilişkiyi, **Spearman** sıralamaya dayalı (monotonik) ilişkiyi ölçer. "
+        "İkisi arasında büyük fark varsa ilişki doğrusal değildir. "
+        "|ρ| ≥ 0.7 güçlü, 0.3–0.7 orta, < 0.3 zayıf kabul edilir."
+    )
+
+    # ============================================================
     # Veri Seçimi
     # ============================================================
 
