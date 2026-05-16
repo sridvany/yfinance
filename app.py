@@ -419,12 +419,12 @@ if symbol:
     st.caption("İndirmek istediğiniz verileri seçin:")
 
     CATEGORIES = {
-        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Return"],        "borsadan gelen ham fiyat verisi ve günlük getiri"),
+        "📊 Ham Veri":    (["Open", "High", "Low", "Close", "Volume", "Return"], "borsadan gelen ham fiyat verisi ve günlük getiri"),
         "📈 Trend":       (["EMA_20", "EMA_50", "EMA_200", "MACD", "Supertrend", "ADX"], "fiyatın hangi yönde gittiğini ve trendin ne kadar güçlü olduğunu gösterir"),
         "⚡ Momentum":    (["RSI", "ROC", "CCI", "Williams_R", "Stoch_K", "Stoch_D", "StochRSI_K", "StochRSI_D"], "fiyat hareketinin hızını ve gücünü ölçer, aşırı alım/satım bölgelerini gösterir"),
         "🌊 Volatilite":  (["ATR", "BB_Upper", "BB_Lower", "BBW"],            "fiyatın ne kadar sert ve geniş hareket ettiğini ölçer"),
         "📦 Hacim":       (["OBV", "CMF", "MFI", "Volume_ROC"],               "alım-satım hacminin yönünü, gücünü ve para akışını gösterir"),
-        "💧 Likidite":    (["Volume", "Amihud", "MEC", "CS_Spread", "Daily_Range"], "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
+        "💧 Likidite":    (["Amihud", "MEC", "CS_Spread", "Daily_Range", "Volume"], "piyasanın ne kadar derin ve verimli işlem gördüğünü ölçer"),
     }
 
     LIQUIDITY_DIMS = {
@@ -442,14 +442,22 @@ if symbol:
         existing = [c for c in cat_cols if c in available_set]
         if not existing:
             continue
-        st.markdown(f"**{cat_label}** *({cat_desc})*")
-        cb_cols = st.columns(4)
-        for i, col_name in enumerate(existing):
-            with cb_cols[i % 4]:
-                dim   = LIQUIDITY_DIMS.get(col_name)
-                label = f"{col_name} — {dim}" if dim else col_name
-                if st.checkbox(label, value=True, key=f"cb_{col_name}"):
-                    selected_cols.append(col_name)
+        is_ham_veri  = cat_label == "📊 Ham Veri"
+        is_likidite  = cat_label == "💧 Likidite"
+        group_active = st.checkbox(
+            f"**{cat_label}** *({cat_desc})*",
+            value=is_ham_veri,
+            key=f"grp_{cat_label}",
+        )
+        if group_active:
+            cb_cols = st.columns(4)
+            for i, col_name in enumerate(existing):
+                with cb_cols[i % 4]:
+                    dim          = LIQUIDITY_DIMS.get(col_name) if is_likidite else None
+                    label        = f"{col_name} — {dim}" if dim else col_name
+                    item_default = col_name != "Return"
+                    if st.checkbox(label, value=item_default, key=f"cb_{cat_label}_{col_name}"):
+                        selected_cols.append(col_name)
 
     categorized = {c for cols, _ in CATEGORIES.values() for c in cols}
     other_cols  = [c for c in df.columns if c not in categorized]
@@ -458,8 +466,10 @@ if symbol:
         cb_cols = st.columns(4)
         for i, col_name in enumerate(other_cols):
             with cb_cols[i % 4]:
-                if st.checkbox(col_name, value=True, key=f"cb_{col_name}"):
+                if st.checkbox(col_name, value=True, key=f"cb_other_{col_name}"):
                     selected_cols.append(col_name)
+
+    selected_cols = list(dict.fromkeys(selected_cols))
 
     if not selected_cols:
         st.info("En az bir sütun seçmelisiniz.")
