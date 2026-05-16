@@ -322,6 +322,26 @@ if symbol:
     </div>
     """, unsafe_allow_html=True)
 
+    if zero_or_null > 0 or null_only > 0:
+        st.markdown("")
+        with st.expander("🔍 Boş ve Sıfır Değerlerin Değişken Dağılımı", expanded=False):
+            detail_rows = []
+            for col in check_cols:
+                n_null = int(df[col].isnull().sum())
+                n_zero = int((df[col] == 0).sum())
+                if n_null > 0 or n_zero > 0:
+                    detail_rows.append({
+                        "Değişken": col,
+                        "Boş (NaN)": n_null,
+                        "Sıfır (0)": n_zero,
+                        "Toplam Sorunlu": n_null + n_zero,
+                        "Oran (%)": round((n_null + n_zero) / len(df) * 100, 2),
+                    })
+            if detail_rows:
+                st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("Tüm değişkenler temiz.")
+
     # ============================================================
     # Makro Varlıklarla Korelasyon
     # ============================================================
