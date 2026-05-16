@@ -267,7 +267,8 @@ if symbol:
         default_start = max(oldest_date, date(2006, 1, 1))
         start_date = st.date_input("Başlangıç", value=default_start, min_value=oldest_date, max_value=newest_date)
     with col2:
-        end_date = st.date_input("Bitiş", value=newest_date, min_value=oldest_date, max_value=newest_date)
+        default_end = min(newest_date, date(2026, 1, 1))
+        end_date = st.date_input("Bitiş", value=default_end, min_value=oldest_date, max_value=newest_date)
 
     if start_date > end_date:
         st.warning("Başlangıç tarihi bitiş tarihinden sonra olamaz.")
