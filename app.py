@@ -7,7 +7,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date
 import base64
 from scipy import stats
 import plotly.graph_objects as go
@@ -264,7 +264,8 @@ if symbol:
     st.subheader("Tarih Aralığı")
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Başlangıç", value=oldest_date, min_value=oldest_date, max_value=newest_date)
+        default_start = max(oldest_date, date(2006, 1, 1))
+        start_date = st.date_input("Başlangıç", value=default_start, min_value=oldest_date, max_value=newest_date)
     with col2:
         end_date = st.date_input("Bitiş", value=newest_date, min_value=oldest_date, max_value=newest_date)
 
