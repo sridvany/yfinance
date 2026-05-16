@@ -342,6 +342,24 @@ if symbol:
             else:
                 st.info("Tüm değişkenler temiz.")
 
+    n30        = max(1, int(len(df) * 0.30))
+    df_last30  = df.iloc[-n30:]
+    zn_last    = int(((df_last30[check_cols].isnull().any(axis=1)) | (df_last30[check_cols] == 0).any(axis=1)).sum())
+    cd_last    = int((df_last30[check_cols].eq(df_last30[check_cols].shift(1)).all(axis=1)).sum())
+    nl_last    = int(df_last30[check_cols].isnull().any(axis=1).sum())
+    os_last    = int(((df_last30["Open"] == df_last30["High"]) & (df_last30["High"] == df_last30["Low"]) & (df_last30["Low"] == df_last30["Close"])).sum())
+
+    with st.expander("📅 Son %30'luk Dilim Özeti", expanded=False):
+        st.markdown(f"""
+<div class="info-box">
+    <b>Seçilen aralıktaki gün sayısı:</b> {n30:,}<br>
+    <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zn_last:,}<br>
+    <b>Arka arkaya aynı OHLCV satır sayısı:</b> {cd_last:,}<br>
+    <b>Boş hücresi olan satır sayısı (0 hariç):</b> {nl_last:,}<br>
+    <b>Open=High=Low=Close olan satır sayısı:</b> {os_last:,}
+</div>
+""", unsafe_allow_html=True)
+
     # ============================================================
     # Makro Varlıklarla Korelasyon
     # ============================================================
