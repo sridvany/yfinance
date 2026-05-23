@@ -312,15 +312,40 @@ if symbol:
     null_only    = int(df[check_cols].isnull().any(axis=1).sum())
     ohlc_same    = int(((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"])).sum())
 
+    loss_mask = (
+        df[check_cols].isnull().any(axis=1)
+        | (df[check_cols] == 0).any(axis=1)
+        | df[check_cols].eq(df[check_cols].shift(1)).all(axis=1)
+        | ((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
+    )
+    n_loss   = int(loss_mask.sum())
+    loss_pct = (n_loss / len(df) * 100) if len(df) > 0 else 0.0
+
     st.markdown(f"""
     <div class="info-box">
         <b>Seçilen aralıktaki {bar_label} sayısı:</b> {len(df):,}<br>
         <b>OHLCV'de boş veya 0 değer taşıyan satır sayısı:</b> {zero_or_null:,}<br>
         <b>Arka arkaya aynı OHLCV satır sayısı:</b> {consec_dupes:,}<br>
         <b>Boş hücresi olan satır sayısı (0 hariç):</b> {null_only:,}<br>
-        <b>Open=High=Low=Close olan satır sayısı:</b> {ohlc_same:,}
+        <b>Open=High=Low=Close olan satır sayısı:</b> {ohlc_same:,}<br>
+        <b>Kayıp Veri:</b> {n_loss:,} satır (%{loss_pct:.2f})
     </div>
     """, unsafe_allow_html=True)
+
+    with st.expander("ℹ️ Kayıp veri nasıl hesaplanır?", expanded=False):
+        st.markdown("""
+Yukarıdaki 4 koşuldan **herhangi birini** sağlayan satırlar sayılır. Birden fazla koşula uyan satır tek sayılır (net kayıp):
+
+1. OHLCV'de boş hücre (NaN) içeren satırlar
+2. OHLCV'de sıfır değer içeren satırlar
+3. Bir önceki satırla tamamen aynı OHLCV'ye sahip satırlar
+4. Open = High = Low = Close olan satırlar
+
+Formül:
+`loss_pct = (loss_mask.sum() / len(df)) × 100`
+
+Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu sağlasa bile yalnızca bir kez sayılır.
+        """)
 
     if zero_or_null > 0 or null_only > 0:
         st.markdown("")
