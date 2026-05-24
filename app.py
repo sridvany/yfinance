@@ -388,7 +388,7 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
     # ============================================================
     # Makro Varlıklarla Korelasyon
     # ============================================================
-    st.subheader("Varlıklarla Fiyat Korelasyonu")
+    st.subheader("Makro Faktör Duyarlılığı")
     st.caption("Seçilen tarih aralığında, ortak günler üzerinden hesaplanır.")
 
     MACRO_ASSETS = {
