@@ -1091,6 +1091,30 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+        # ── Makro Faktör Verileri Excel İndir ─────────────────────
+        macro_frames = {}
+        for label, sym in MACRO_ASSETS.items():
+            m_close = fetch_macro_close(sym, start_date, end_fetch, interval)
+            if m_close is not None and not m_close.empty:
+                macro_frames[label] = m_close
+
+        if macro_frames:
+            macro_df = pd.concat(macro_frames, axis=1)
+            macro_df.index.name = "Datetime" if is_intraday else "Date"
+            macro_df = macro_df.reset_index()
+
+            excel_macro = BytesIO()
+            with pd.ExcelWriter(excel_macro, engine="openpyxl") as writer:
+                macro_df.to_excel(writer, index=False, sheet_name="Macro")
+            excel_macro.seek(0)
+            macro_file = f"makro_faktorler_{interval}_{start_date}_{end_date}.xlsx"
+            st.download_button(
+                label=f"📥 Makro Faktör Verileri ({len(macro_df):,} satır × {len(macro_frames)} varlık)",
+                data=excel_macro.getvalue(),
+                file_name=macro_file,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
         ohlc_mask   = ~((df["Open"] == df["High"]) & (df["High"] == df["Low"]) & (df["Low"] == df["Close"]))
         df_clean    = df[ohlc_mask][["Open", "High", "Low", "Close", "Volume"]].copy()
         removed_cnt = len(df) - len(df_clean)
