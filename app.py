@@ -401,6 +401,7 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
         "Korku Endeksi":       "^VIX",
         "MSCI Dünya":       "^990100-USD-STRD",
         "BITCOIN":       "BTC-USD",
+        "ABD 10Y Tahvil (^TNX)": "^TNX",
         
         
     }
