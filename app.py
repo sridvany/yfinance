@@ -393,14 +393,14 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
 
     MACRO_ASSETS = {
         "Altın (GC=F)":     "GC=F",
+        "BITCOIN":       "BTC-USD",
+        "EUR/USD (EURUSD=X)":       "EURUSD=X",
         "S&P 500 (^GSPC)":  "^GSPC",
         "Dolar Endeksi (DX-Y.NYB)": "DX-Y.NYB",
         "Brent Petrol (BZ=F)":      "BZ=F",
-        "EUR/USD (EURUSD=X)":       "EURUSD=X",
         "BIST100":       "XU100.IS",
         "Korku Endeksi":       "^VIX",
         "MSCI Dünya":       "^990100-USD-STRD",
-        "BITCOIN":       "BTC-USD",
         "ABD 10Y Tahvil (^TNX)": "^TNX",
         
         
