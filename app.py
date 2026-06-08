@@ -214,7 +214,7 @@ INTERVAL_OPTIONS = {
     "1 Ay":      "1mo",
 }
 INTERVAL_MAX_DAYS = {
-    "1m": 30, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
+    "1m": 7, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
     "1h": 730, "1d": None, "1wk": None, "1mo": None,
 }
 INTERVAL_STL_PERIOD = {
