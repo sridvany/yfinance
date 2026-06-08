@@ -264,10 +264,10 @@ if symbol:
     st.subheader("Tarih Aralığı")
     col1, col2 = st.columns(2)
     with col1:
-        default_start = max(oldest_date, date(2006, 1, 1))
+        default_start = min(max(oldest_date, date(2006, 1, 1)), newest_date)
         start_date = st.date_input("Başlangıç", value=default_start, min_value=oldest_date, max_value=newest_date)
     with col2:
-        default_end = min(newest_date, date(2026, 1, 1))
+        default_end = max(min(newest_date, date(2026, 1, 1)), oldest_date)
         end_date = st.date_input("Bitiş", value=default_end, min_value=oldest_date, max_value=newest_date)
 
     if start_date > end_date:
