@@ -33,8 +33,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 veri indir")
-st.caption("ne ekersen onu biçersin...")
+st.title("📊 yfinance veri indir")
+st.caption("garbage in garbage out...")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
