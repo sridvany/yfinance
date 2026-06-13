@@ -23,7 +23,7 @@ from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 from statsmodels.tsa.seasonal import STL
 
-st.set_page_config(page_title="tahmin.ai veri indirici", layout="centered")
+st.set_page_config(page_title="veri indir", layout="centered")
 
 st.markdown("""
 <style>
@@ -33,7 +33,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 tahmin.ai veri indirici")
+st.title("📊 veri indir")
 st.caption("ne ekersen onu biçersin...")
 
 # ============================================================
