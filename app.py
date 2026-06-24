@@ -34,7 +34,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 yfinance veri indir")
-st.caption("yfinance ticker'ı öğrenmek için finance.yahoo.com/lookup/")
+st.caption("yfinance sembolünü öğrenmek için finance.yahoo.com/lookup/")
 
 # ============================================================
 # Teknik İndikatör Fonksiyonları
