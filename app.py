@@ -139,12 +139,16 @@ def fetch_ig_snapshot(rel_path, region="en"):
     m = re.search(r"Low:\s*([\d,]+\.?\d*)", text)
     if m: out["low"] = _num(m.group(1))
 
-    # Sentiment — birincil: "76% of client accounts are long on this market"
+    # Sentiment — TEK güvenilir kaynak: "X% of client accounts are long/short"
     out["long_pct"] = None
     out["short_pct"] = None
-    m = re.search(r"(\d+)\s*%\s*of\s+client\s+accounts\s+are\s+(long|short)",
-                  text, re.IGNORECASE)
+    out["sentiment_raw"] = None
+    m = re.search(
+        r"(\d+)\s*%\s*of\s+client\s+accounts\s+are\s+(long|short)",
+        text, re.IGNORECASE,
+    )
     if m:
+        out["sentiment_raw"] = m.group(0)   # debug: yakalanan ham cümle
         pct = int(m.group(1))
         if m.group(2).lower() == "long":
             out["long_pct"], out["short_pct"] = pct, 100 - pct
@@ -1821,6 +1825,9 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                         st.caption(
                             f"IG müşteri hesaplarının %{lp}'i **long**, %{sp}'i **short**."
                         )
+                        raw = snap.get("sentiment_raw")
+                        if raw:
+                            st.caption(f"🔎 Sayfadan okunan: “{raw}”")
                     else:
                         st.caption("Sentiment (long/short) verisi bu sayfada bulunamadı.")
 
