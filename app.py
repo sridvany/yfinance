@@ -137,6 +137,67 @@ def fetch_ig_snapshot(rel_path, region="en"):
 
 
 # ============================================================
+# Google Sheets — IG snapshot geçmişi (kalıcı kayıt)
+# ============================================================
+
+IG_HISTORY_COLUMNS = [
+    "timestamp", "ticker", "ig_name", "sell", "buy", "change",
+    "change_pct", "high", "low", "long_pct", "short_pct",
+]
+
+def _get_gsheets_conn():
+    """st.connection ile gsheets bağlantısı döndürür; yoksa None."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        return st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        return None
+
+def save_ig_snapshot(snap, ticker):
+    """Snapshot'ı Google Sheets'e yeni satır olarak ekler.
+    Dönüş: (ok: bool, mesaj: str)."""
+    conn = _get_gsheets_conn()
+    if conn is None:
+        return False, "Google Sheets bağlantısı kurulu değil (secrets/paket eksik)."
+    try:
+        try:
+            df = conn.read(ttl=0)
+            df = df.dropna(how="all")
+        except Exception:
+            df = pd.DataFrame(columns=IG_HISTORY_COLUMNS)
+
+        row = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ticker": ticker,
+            "ig_name": snap.get("name") or "",
+            "sell": snap.get("sell"), "buy": snap.get("buy"),
+            "change": snap.get("change"), "change_pct": snap.get("change_pct"),
+            "high": snap.get("high"), "low": snap.get("low"),
+            "long_pct": snap.get("long_pct"), "short_pct": snap.get("short_pct"),
+        }
+        new_df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        conn.update(data=new_df)
+        return True, "Kayıt eklendi."
+    except Exception as e:
+        return False, f"Kayıt hatası: {e}"
+
+def load_ig_history(ticker):
+    """Verilen ticker'ın tüm geçmiş kayıtlarını DataFrame olarak döndürür."""
+    conn = _get_gsheets_conn()
+    if conn is None:
+        return None
+    try:
+        df = conn.read(ttl=0).dropna(how="all")
+        if df.empty or "ticker" not in df.columns:
+            return pd.DataFrame(columns=IG_HISTORY_COLUMNS)
+        df = df[df["ticker"] == ticker].copy()
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        return df.sort_values("timestamp")
+    except Exception:
+        return None
+
+
+# ============================================================
 # Teknik İndikatör Fonksiyonları
 # ============================================================
 
@@ -1612,6 +1673,10 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 with st.spinner("IG sayfası çekiliyor..."):
                     snap = fetch_ig_snapshot(rel, region)
                 st.session_state["ig_snap"] = snap
+                # Başarılı snapshot'ı kalıcı geçmişe kaydet
+                if snap and not snap.get("error"):
+                    ok, msg = save_ig_snapshot(snap, symbol.strip().upper())
+                    st.session_state["ig_save_msg"] = (ok, msg)
 
             snap = st.session_state.get("ig_snap")
             if snap:
@@ -1667,6 +1732,80 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                         "IG fiyatları sayfa yüklendiği andaki snapshot'tır, canlı tick "
                         "değildir. Hafta içi kapalı enstrümanlarda değer eski olabilir."
                     )
+
+                    # Kayıt durumu mesajı
+                    save_msg = st.session_state.get("ig_save_msg")
+                    if save_msg:
+                        ok, msg = save_msg
+                        if ok:
+                            st.success(f"💾 {msg} Bu snapshot geçmişe eklendi.")
+                        else:
+                            st.info(f"💾 Kaydedilemedi: {msg}")
+
+            # ── Geçmiş kayıtlar (tüm zaman) ──────────────────────────
+            st.divider()
+            st.markdown("### 📈 Geçmiş kayıtlar")
+            hist = load_ig_history(symbol.strip().upper())
+
+            if hist is None:
+                st.info(
+                    "Google Sheets bağlantısı bulunamadı. Geçmiş için secrets "
+                    "ayarlarını ve `st-gsheets-connection` paketini kontrol et."
+                )
+            elif hist.empty:
+                st.caption(
+                    "Bu enstrüman için henüz kayıt yok. 'IG verisini çek' "
+                    "butonuna bastıkça geçmiş birikir."
+                )
+            else:
+                # Long/Short zaman serisi grafiği
+                h2 = hist.dropna(subset=["long_pct", "short_pct"])
+                if not h2.empty:
+                    fig_h = go.Figure()
+                    fig_h.add_trace(go.Scatter(
+                        x=h2["timestamp"], y=h2["long_pct"], mode="lines+markers",
+                        name="Long %", line=dict(color="#16a34a", width=2)
+                    ))
+                    fig_h.add_trace(go.Scatter(
+                        x=h2["timestamp"], y=h2["short_pct"], mode="lines+markers",
+                        name="Short %", line=dict(color="#dc2626", width=2)
+                    ))
+                    fig_h.update_layout(
+                        yaxis_title="% müşteri pozisyonu", xaxis_title="Tarih",
+                        height=320, margin=dict(l=50, r=20, t=20, b=40),
+                        hovermode="x unified", yaxis=dict(range=[0, 100]),
+                    )
+                    st.plotly_chart(fig_h, use_container_width=True)
+
+                    # En eski kaydı vurgula ("o zaman şöyleydi")
+                    first = h2.iloc[0]
+                    st.caption(
+                        f"İlk kayıt ({first['timestamp']:%d.%m.%Y}): "
+                        f"%{int(first['long_pct'])} long, %{int(first['short_pct'])} short."
+                    )
+
+                # Fiyat geçmişi (varsa)
+                hp = hist.dropna(subset=["sell"])
+                if not hp.empty:
+                    fig_p = go.Figure()
+                    fig_p.add_trace(go.Scatter(
+                        x=hp["timestamp"], y=hp["sell"], mode="lines+markers",
+                        name="SELL", line=dict(color="#2563eb", width=2)
+                    ))
+                    fig_p.update_layout(
+                        yaxis_title="Fiyat (SELL)", xaxis_title="Tarih",
+                        height=280, margin=dict(l=50, r=20, t=20, b=40),
+                        hovermode="x unified",
+                    )
+                    st.plotly_chart(fig_p, use_container_width=True)
+
+                # Tam tablo
+                st.markdown("**Tüm kayıtlar**")
+                show = hist.copy()
+                show["timestamp"] = show["timestamp"].dt.strftime("%Y-%m-%d %H:%M")
+                st.dataframe(
+                    show[IG_HISTORY_COLUMNS], use_container_width=True, hide_index=True
+                )
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
