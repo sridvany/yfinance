@@ -1947,4 +1947,4 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                                 st.error(msg)
 
 else:
-    st.warning("Filtreleme sonrası veri kalmadı.")
+    st.warning("Filtreleme sonrası veri kalmadı.") 
