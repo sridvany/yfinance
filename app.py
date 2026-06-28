@@ -1846,7 +1846,15 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     st.session_state.pop("pa_result", None)
                 else:
                     query = _z(values[-window:])
-                    last_start = n - window
+                    query_start = n - window
+                    # Sorgu penceresinin kendisini ve onunla örtüşen
+                    # (min_gap'ten yakın) son pencereleri tarama dışı bırak.
+                    last_start = query_start - min_gap
+
+                    if last_start < 0:
+                        st.warning("Pencere veriye göre çok uzun; daha kısa pencere seçin.")
+                        st.session_state.pop("pa_result", None)
+                        st.stop()
 
                     with st.spinner("DTW taraması yapılıyor..."):
                         cands = []
