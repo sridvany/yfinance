@@ -264,11 +264,9 @@ if symbol:
     st.subheader("Tarih Aralığı")
     col1, col2 = st.columns(2)
     with col1:
-        default_start = min(max(oldest_date, date(2006, 1, 1)), newest_date)
-        start_date = st.date_input("Başlangıç", value=default_start, min_value=oldest_date, max_value=newest_date)
+        start_date = st.date_input("Başlangıç", value=oldest_date, min_value=oldest_date, max_value=newest_date)
     with col2:
-        default_end = max(min(newest_date, date(2026, 1, 1)), oldest_date)
-        end_date = st.date_input("Bitiş", value=default_end, min_value=oldest_date, max_value=newest_date)
+        end_date = st.date_input("Bitiş", value=newest_date, min_value=oldest_date, max_value=newest_date)
 
     if start_date > end_date:
         st.warning("Başlangıç tarihi bitiş tarihinden sonra olamaz.")
@@ -1781,8 +1779,7 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
 
         st.caption(
             "Bugünkü formasyona en benzeyen geçmiş dönemleri DTW ile bulur. "
-            "z-score normalize fiyat üzerinde çalışır; tekil tahmin değil, "
-            "benzer dönemlerin **sonrasındaki getiri dağılımı** raporlanır."
+            "z-score normalize fiyat üzerinde grafik/şekil benzerliğine göre çalışır."
         )
 
         try:
@@ -1797,7 +1794,7 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
         if "Close" not in df.columns:
             st.info("Bu analiz için **Close** sütunu gerekli.")
         else:
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             with c1:
                 pa_window = st.selectbox(
                     "Pencere (gün)", options=[30, 60, 90, 120, 240, 360], index=1, key="pa_window",
@@ -1809,23 +1806,12 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 pa_topk = st.number_input(
                     "Top-K eşleşme", min_value=3, max_value=30, value=5, step=1, key="pa_topk",
                     help="Kaç benzer dönem listelensin. En benzeyen ilk K dönem gösterilir. "
-                         "10 dengeli: dağılım için yeterli örnek var, hepsi de gerçekten benzer "
-                         "kalır. Çok büyütmek alttaki zayıf eşleşmeleri katar."
-                )
-            with c3:
-                pa_h2 = st.number_input(
-                    "Uzun ufuk (gün)", min_value=5, max_value=250, value=60, step=5, key="pa_h2",
-                    help="Eşleşmeden sonra kaç gün ileriye bakılsın. Benzer dönem bulunduktan "
-                         "sonra 'sonraki X günde ne oldu' getirisi hesaplanır. 20g (sabit) anlık "
-                         "tepki, bu değer (örn. 60g) formasyonun tamamlanmasıdır."
+                         "Çok büyütmek alttaki zayıf eşleşmeleri de katar."
                 )
             st.caption(
-                "**Pencere** = formasyonun uzunluğu · **Top-K** = kaç benzer dönem · "
-                "**Uzun ufuk** = eşleşme sonrası kaç gün ileriye bakılacağı "
-                "(kısa ufuk 20 gün sabittir). Kutuların yanındaki **?** işaretinde detay var."
+                "**Pencere** = formasyonun uzunluğu · **Top-K** = kaç benzer dönem gösterilsin. "
+                "Kutuların yanındaki **?** işaretinde detay var."
             )
-            pa_h1 = 20
-            horizons = sorted({pa_h1, int(pa_h2)})
 
             run_pa = st.button("Örüntü Analizini Çalıştır", key="pa_run")
 
@@ -1853,15 +1839,14 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 n      = len(values)
                 window = int(pa_window)
                 top_k  = int(pa_topk)
-                max_h  = max(horizons)
                 min_gap = window // 2
 
-                if n < window + max_h + 5:
-                    st.warning(f"Yetersiz veri: {n} gün. En az {window + max_h + 5} gerekli.")
+                if n < window + 5:
+                    st.warning(f"Yetersiz veri: {n} gün. En az {window + 5} gerekli.")
                     st.session_state.pop("pa_result", None)
                 else:
                     query = _z(values[-window:])
-                    last_start = n - window - max_h
+                    last_start = n - window
 
                     with st.spinner("DTW taraması yapılıyor..."):
                         cands = []
@@ -1884,9 +1869,6 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     matches = []
                     for rank, (d, start) in enumerate(selected, 1):
                         end = start + window
-                        end_price = values[end - 1]
-                        fwd = {h: round((values[end - 1 + h] / end_price - 1) * 100, 2)
-                               for h in horizons}
                         matches.append({
                             "rank": rank,
                             "start": int(start),
@@ -1894,12 +1876,11 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                             "sim": round((1 - d / worst) * 100, 1),
                             "start_date": str(dates[start].date()),
                             "end_date": str(dates[end - 1].date()),
-                            "fwd": fwd,
                         })
 
                     st.session_state["pa_result"] = {
                         "values": values, "query": query, "window": window,
-                        "horizons": horizons, "matches": matches,
+                        "matches": matches,
                         "dates": [str(dt.date()) for dt in dates],
                     }
 
@@ -1909,22 +1890,18 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 values  = res["values"]
                 query   = res["query"]
                 window  = res["window"]
-                horizons = res["horizons"]
                 matches = res["matches"]
 
                 # Tablo
                 rows = []
                 for m in matches:
-                    row = {
+                    rows.append({
                         "#":         m["rank"],
                         "Benzerlik %": m["sim"],
                         "Başlangıç": m["start_date"],
                         "Bitiş":     m["end_date"],
                         "DTW":       round(m["dtw"], 3),
-                    }
-                    for h in horizons:
-                        row[f"+{h}g %"] = m["fwd"][h]
-                    rows.append(row)
+                    })
                 table = pd.DataFrame(rows)
 
                 st.subheader("Overlay — bugün vs en benzer dönemler")
@@ -2003,7 +1980,6 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 qt, qd = _shape_desc(query)
                 mt, md = _shape_desc(z_match)
                 corr = float(np.corrcoef(query, z_match)[0, 1])
-                fwd_txt = " · ".join(f"+{h}g: %{m['fwd'][h]}" for h in horizons)
 
                 if qt == mt:
                     trend_line = f"İkisi de genel olarak **{qt}** eğiliminde."
@@ -2016,29 +1992,13 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     f"- {trend_line}\n"
                     f"- Bugünün formu: {qd}. Bu dönemin formu: {md}.\n"
                     f"- Nokta-nokta korelasyon: **{corr:.2f}** "
-                    f"(DTW benzerlik skoru: **%{m['sim']}**).\n"
-                    f"- Bu dönemin sonrasındaki getiri → {fwd_txt}"
+                    f"(DTW benzerlik skoru: **%{m['sim']}**)."
                 )
-
-                st.subheader("Forward getiri dağılımı")
-                summ = []
-                for h in horizons:
-                    s = table[f"+{h}g %"]
-                    summ.append({
-                        "Ufuk":       f"+{h}g",
-                        "Ortalama %": round(s.mean(), 2),
-                        "Medyan %":   round(s.median(), 2),
-                        "Std %":      round(s.std(), 2),
-                        "Min %":      round(s.min(), 2),
-                        "Max %":      round(s.max(), 2),
-                        "Pozitif %":  round((s > 0).mean() * 100, 0),
-                    })
-                st.dataframe(pd.DataFrame(summ), use_container_width=True, hide_index=True)
 
                 st.warning(
                     "**Uyarı:** 'En benzer' geçmiş dönem, geleceğin aynı olacağı "
-                    "anlamına gelmez. Std yüksek ve pozitif oran %50'ye yakınsa "
-                    "sinyal zayıftır; tekil eşleşmeye değil dağılıma bakın."
+                    "anlamına gelmez. Görsel benzerlik yüksek olsa bile sonrasının "
+                    "yönü farklı olabilir."
                 )
 
 else:
