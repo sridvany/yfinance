@@ -90,6 +90,9 @@ def fetch_ig_snapshot(rel_path, region="en"):
 
     soup = BeautifulSoup(r.text, "html.parser")
     text = soup.get_text(" ", strip=True)
+    # Non-breaking space ve çoklu boşlukları normalize et (IG &nbsp; kullanır)
+    text = text.replace("\xa0", " ").replace("\u202f", " ")
+    text = re.sub(r"\s+", " ", text)
 
     def _num(s):
         if s is None:
@@ -159,6 +162,29 @@ def fetch_ig_snapshot(rel_path, region="en"):
     if h1: out["name"] = h1.get_text(strip=True)
 
     return out
+
+
+def fetch_ig_auto(rel_path, regions=("za", "en", "ae")):
+    """Birden çok bölgeyi sırayla dener; long/short dolu geleni döndürür.
+    Hiçbiri sentiment vermezse en azından fiyat dolu olan ilk sonucu verir."""
+    first_ok = None
+    last_err = None
+    for reg in regions:
+        snap = fetch_ig_snapshot(rel_path, reg)
+        if snap.get("error"):
+            last_err = snap
+            continue
+        # Sentiment dolu mu? Doluysa hemen kullan
+        if snap.get("long_pct") is not None:
+            snap["region_used"] = reg
+            return snap
+        # Fiyatı dolu ama sentiment yoksa yedek olarak sakla
+        if first_ok is None and snap.get("sell") is not None:
+            snap["region_used"] = reg
+            first_ok = snap
+    if first_ok is not None:
+        return first_ok
+    return last_err or {"error": "Hiçbir bölgeden veri alınamadı.", "url": ""}
 
 
 # ============================================================
@@ -1731,10 +1757,15 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
             with st.expander("Hafta sonu desteklenen tickerlar"):
                 st.write(", ".join(sorted(IG_MARKET_MAP.keys())))
         else:
-            region = st.selectbox("IG bölgesi", ["en", "ae", "za"], index=0, key="ig_region")
+            region = st.selectbox(
+                "IG bölgesi", ["Otomatik", "za", "en", "ae"], index=0, key="ig_region"
+            )
             if st.button("IG verisini çek", key="ig_fetch"):
                 with st.spinner("IG sayfası çekiliyor..."):
-                    snap = fetch_ig_snapshot(rel, region)
+                    if region == "Otomatik":
+                        snap = fetch_ig_auto(rel)
+                    else:
+                        snap = fetch_ig_snapshot(rel, region)
                 st.session_state["ig_snap"] = snap
                 # Başarılı snapshot'ı kalıcı geçmişe kaydet
                 if snap and not snap.get("error"):
@@ -1747,7 +1778,12 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     st.error(snap["error"])
                     st.caption(f"Denenen URL: {snap.get('url','')}")
                 else:
-                    st.markdown(f"**{snap.get('name') or symbol}** — [IG sayfası]({snap['url']})")
+                    reg_used = snap.get("region_used")
+                    reg_tag = f" · bölge: `{reg_used}`" if reg_used else ""
+                    st.markdown(
+                        f"**{snap.get('name') or symbol}** — "
+                        f"[IG sayfası]({snap['url']}){reg_tag}"
+                    )
 
                     # BUY / SELL
                     c1, c2 = st.columns(2)
