@@ -37,6 +37,95 @@ st.title("📊 yfinance veri indir")
 st.caption("yfinance sembolünü öğrenmek için finance.yahoo.com/lookup/")
 
 # ============================================================
+# IG.com — ticker → market sayfası eşleştirme + snapshot çekme
+# ============================================================
+
+# yfinance ticker -> IG market sayfası göreli yolu (bölge kodu hariç)
+IG_MARKET_MAP = {
+    # Emtia
+    "GC=F": "commodities/markets-commodities/gold",
+    "GLD":  "commodities/markets-commodities/gold",
+    "XAUUSD=X": "commodities/markets-commodities/gold",
+    "SI=F": "commodities/markets-commodities/silver",
+    "CL=F": "commodities/markets-commodities/us-light-crude",
+    "BZ=F": "commodities/markets-commodities/oil-brent-crude",
+    # Hisse
+    "AAPL": "shares/markets-shares/apple-inc",
+    # Kripto / FX
+    "BTC-USD": "forex/markets-forex/bitcoin-1",
+}
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_ig_snapshot(rel_path, region="en"):
+    """IG market sayfasından anlık BUY/SELL/değişim/High/Low/sentiment çeker.
+    Dönüş: dict(name, code, sell, buy, change, change_pct, high, low,
+                long_pct, short_pct, url) veya hata için dict(error=...)."""
+    import requests
+    from bs4 import BeautifulSoup
+
+    url = f"https://www.ig.com/{region}/{rel_path}"
+    headers = {
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0 Safari/537.36"),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code} — IG sayfası alınamadı.", "url": url}
+    except Exception as e:
+        return {"error": f"Bağlantı hatası: {e}", "url": url}
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    text = soup.get_text(" ", strip=True)
+
+    def _num(s):
+        try:
+            return float(s.replace(",", ""))
+        except Exception:
+            return None
+
+    out = {"url": url, "name": None, "code": None,
+           "sell": None, "buy": None, "change": None, "change_pct": None,
+           "high": None, "low": None, "long_pct": None, "short_pct": None}
+
+    # SELL / BUY — sayfada "SELL<fiyat>" / "BUY<fiyat>" şeklinde geçiyor
+    m = re.search(r"SELL\s*([\d,]+\.?\d*)", text)
+    if m: out["sell"] = _num(m.group(1))
+    m = re.search(r"BUY\s*([\d,]+\.?\d*)", text)
+    if m: out["buy"] = _num(m.group(1))
+
+    # Değişim: "66.19(1.55%)" veya "-14.0(-0.34%)"
+    m = re.search(r"(-?[\d,]+\.?\d*)\s*\((-?[\d.]+)%\)", text)
+    if m:
+        out["change"] = _num(m.group(1))
+        out["change_pct"] = _num(m.group(2))
+
+    m = re.search(r"High:\s*([\d,]+\.?\d*)", text)
+    if m: out["high"] = _num(m.group(1))
+    m = re.search(r"Low:\s*([\d,]+\.?\d*)", text)
+    if m: out["low"] = _num(m.group(1))
+
+    # Sentiment: "78% of client accounts are long on this market"
+    m = re.search(r"(\d+)%\s*of client accounts are\s*\*{0,2}(long|short)",
+                  text, re.IGNORECASE)
+    if m:
+        pct = int(m.group(1))
+        if m.group(2).lower() == "long":
+            out["long_pct"], out["short_pct"] = pct, 100 - pct
+        else:
+            out["short_pct"], out["long_pct"] = pct, 100 - pct
+
+    # Enstrüman adı: ilk H1
+    h1 = soup.find("h1")
+    if h1: out["name"] = h1.get_text(strip=True)
+
+    return out
+
+
+# ============================================================
 # Teknik İndikatör Fonksiyonları
 # ============================================================
 
@@ -547,7 +636,9 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
     df_clean2      = pd.DataFrame()
     dl_df          = pd.DataFrame()
 
-    tab1, tab2, tab3 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "🔍 Örüntü Analizi"])
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["📥 Veri İndir", "🔬 Feature Analizi", "🔍 Örüntü Analizi", "🟡 IG Hafta Sonu"]
+    )
 
     with tab1:
 
@@ -2008,6 +2099,77 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     "anlamına gelmez. Görsel benzerlik yüksek olsa bile sonrasının "
                     "yönü farklı olabilir."
                 )
+
+    with tab4:
+        st.subheader("🟡 IG.com anlık piyasa bilgisi")
+
+        rel = IG_MARKET_MAP.get(symbol.strip().upper())
+        if rel is None:
+            st.info(
+                f"**{symbol}** için IG eşleşmesi tanımlı değil. "
+                "Tanımlı tickerlar: " + ", ".join(sorted(IG_MARKET_MAP.keys()))
+            )
+        else:
+            region = st.selectbox("IG bölgesi", ["en", "ae", "za"], index=0, key="ig_region")
+            if st.button("IG verisini çek", key="ig_fetch"):
+                with st.spinner("IG sayfası çekiliyor..."):
+                    snap = fetch_ig_snapshot(rel, region)
+                st.session_state["ig_snap"] = snap
+
+            snap = st.session_state.get("ig_snap")
+            if snap:
+                if snap.get("error"):
+                    st.error(snap["error"])
+                    st.caption(f"Denenen URL: {snap.get('url','')}")
+                else:
+                    st.markdown(f"**{snap.get('name') or symbol}** — [IG sayfası]({snap['url']})")
+
+                    # BUY / SELL
+                    c1, c2 = st.columns(2)
+                    c1.metric("SELL", snap["sell"] if snap["sell"] is not None else "—")
+                    c2.metric("BUY",  snap["buy"]  if snap["buy"]  is not None else "—")
+
+                    # Değişim — yeşil/kırmızı
+                    chg, pct = snap.get("change"), snap.get("change_pct")
+                    if chg is not None:
+                        color = "#16a34a" if chg >= 0 else "#dc2626"
+                        sign  = "▲" if chg >= 0 else "▼"
+                        pct_s = f" ({pct:+.2f}%)" if pct is not None else ""
+                        st.markdown(
+                            f"<div style='font-size:1.3em;font-weight:700;color:{color}'>"
+                            f"{sign} {chg:+.2f}{pct_s}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    # High / Low
+                    h, l = snap.get("high"), snap.get("low")
+                    if h is not None or l is not None:
+                        st.caption(f"High: {h if h is not None else '—'}  |  "
+                                   f"Low: {l if l is not None else '—'}")
+
+                    # Sentiment — long/short
+                    lp, sp = snap.get("long_pct"), snap.get("short_pct")
+                    if lp is not None and sp is not None:
+                        st.markdown("**Müşteri pozisyonları**")
+                        st.markdown(
+                            f"<div style='display:flex;border-radius:6px;overflow:hidden;"
+                            f"font-size:0.9em;font-weight:600;color:white'>"
+                            f"<div style='flex:{lp};background:#16a34a;padding:6px;"
+                            f"text-align:center'>Long %{lp}</div>"
+                            f"<div style='flex:{sp};background:#dc2626;padding:6px;"
+                            f"text-align:center'>Short %{sp}</div></div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.caption(
+                            f"IG müşteri hesaplarının %{lp}'i **long**, %{sp}'i **short**."
+                        )
+                    else:
+                        st.caption("Sentiment (long/short) verisi bu sayfada bulunamadı.")
+
+                    st.warning(
+                        "IG fiyatları sayfa yüklendiği andaki snapshot'tır, canlı tick "
+                        "değildir. Hafta içi kapalı enstrümanlarda değer eski olabilir."
+                    )
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
