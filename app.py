@@ -165,25 +165,18 @@ def fetch_ig_snapshot(rel_path, region="en"):
 
 
 def fetch_ig_auto(rel_path, regions=("za", "en", "ae")):
-    """Birden çok bölgeyi sırayla dener; long/short dolu geleni döndürür.
-    Hiçbiri sentiment vermezse en azından fiyat dolu olan ilk sonucu verir."""
-    first_ok = None
+    """Bölgeleri sırayla dener; FİYATI dolu gelen İLK bölgede durur ve
+    o bölgenin tüm verisini (sentiment dahil) döndürür. Bölgeler arası
+    veri karıştırılmaz — fiyat bir bölgeden, sentiment başkasından gelmez."""
     last_err = None
     for reg in regions:
         snap = fetch_ig_snapshot(rel_path, reg)
         if snap.get("error"):
             last_err = snap
             continue
-        # Sentiment dolu mu? Doluysa hemen kullan
-        if snap.get("long_pct") is not None:
+        if snap.get("sell") is not None:   # bu bölge gerçek veri verdi
             snap["region_used"] = reg
             return snap
-        # Fiyatı dolu ama sentiment yoksa yedek olarak sakla
-        if first_ok is None and snap.get("sell") is not None:
-            snap["region_used"] = reg
-            first_ok = snap
-    if first_ok is not None:
-        return first_ok
     return last_err or {"error": "Hiçbir bölgeden veri alınamadı.", "url": ""}
 
 
