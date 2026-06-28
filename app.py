@@ -549,7 +549,7 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
     df_clean2      = pd.DataFrame()
     dl_df          = pd.DataFrame()
 
-    tab1, tab2 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi"])
+    tab1, tab2, tab3 = st.tabs(["📥 Veri İndir", "🔬 Feature Analizi", "🔍 Örüntü Analizi"])
 
     with tab1:
 
@@ -1775,6 +1775,129 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                         data=buf_final.getvalue(),
                         file_name=f"{symbol.replace('.', '_')}_{interval}_{start_date}_{end_date}_{dl_key.split('—')[-1].strip().replace(' ', '_').lower()}_secili.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
+    with tab3:
+
+        st.caption(
+            "Bugünkü formasyona en benzeyen geçmiş dönemleri DTW ile bulur. "
+            "z-score normalize fiyat üzerinde çalışır; tekil tahmin değil, "
+            "benzer dönemlerin **sonrasındaki getiri dağılımı** raporlanır."
+        )
+
+        try:
+            from dtaidistance import dtw
+        except ImportError:
+            st.error(
+                "`dtaidistance` kurulu değil. requirements.txt'e `dtaidistance` "
+                "ekleyip `pip install dtaidistance` çalıştırın."
+            )
+            st.stop()
+
+        if "Close" not in df.columns:
+            st.info("Bu analiz için **Close** sütunu gerekli.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                pa_window = st.number_input("Pencere (gün)", min_value=10, max_value=400, value=60, step=5, key="pa_window")
+            with c2:
+                pa_topk = st.number_input("Top-K eşleşme", min_value=3, max_value=30, value=10, step=1, key="pa_topk")
+            with c3:
+                pa_h2 = st.number_input("Uzun ufuk (gün)", min_value=5, max_value=250, value=60, step=5, key="pa_h2")
+            pa_h1 = 20
+            horizons = sorted({pa_h1, int(pa_h2)})
+
+            run_pa = st.button("Örüntü Analizini Çalıştır", key="pa_run")
+
+            if run_pa:
+                prices = df["Close"].dropna()
+                values = prices.values.astype(np.float64)
+                dates  = prices.index
+                n      = len(values)
+                window = int(pa_window)
+                top_k  = int(pa_topk)
+                max_h  = max(horizons)
+                min_gap = window // 2
+
+                if n < window + max_h + 5:
+                    st.warning(f"Yetersiz veri: {n} gün. En az {window + max_h + 5} gerekli.")
+                else:
+                    def _z(a):
+                        s = a.std()
+                        return np.zeros_like(a) if s == 0 else (a - a.mean()) / s
+
+                    query = _z(values[-window:])
+                    last_start = n - window - max_h
+
+                    with st.spinner("DTW taraması yapılıyor..."):
+                        cands = []
+                        for start in range(0, last_start + 1):
+                            d = dtw.distance_fast(query, _z(values[start:start + window]))
+                            cands.append((d, start))
+                        cands.sort(key=lambda x: x[0])
+
+                        selected = []
+                        for d, start in cands:
+                            if all(abs(start - s) >= min_gap for _, s in selected):
+                                selected.append((d, start))
+                            if len(selected) == top_k:
+                                break
+
+                    rows = []
+                    for d, start in selected:
+                        end = start + window
+                        end_price = values[end - 1]
+                        row = {
+                            "Başlangıç": dates[start].date(),
+                            "Bitiş":     dates[end - 1].date(),
+                            "DTW":       round(float(d), 3),
+                        }
+                        for h in horizons:
+                            row[f"+{h}g %"] = round((values[end - 1 + h] / end_price - 1) * 100, 2)
+                        rows.append(row)
+                    table = pd.DataFrame(rows)
+
+                    st.subheader("Overlay — bugün vs en benzer dönemler")
+                    fig_ov = go.Figure()
+                    x = list(range(window))
+                    for d, start in selected:
+                        fig_ov.add_trace(go.Scatter(
+                            x=x, y=_z(values[start:start + window]),
+                            mode="lines", line=dict(color="rgba(150,150,150,0.4)", width=1),
+                            showlegend=False, hoverinfo="skip"
+                        ))
+                    fig_ov.add_trace(go.Scatter(
+                        x=x, y=query, mode="lines",
+                        line=dict(color="#dc2626", width=3), name="Bugün"
+                    ))
+                    fig_ov.update_layout(
+                        xaxis_title="Pencere içi gün", yaxis_title="z-score fiyat",
+                        height=420, margin=dict(l=50, r=20, t=20, b=40), hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_ov, use_container_width=True)
+
+                    st.subheader("En benzer dönemler")
+                    st.dataframe(table, use_container_width=True, hide_index=True)
+
+                    st.subheader("Forward getiri dağılımı")
+                    summ = []
+                    for h in horizons:
+                        s = table[f"+{h}g %"]
+                        summ.append({
+                            "Ufuk":       f"+{h}g",
+                            "Ortalama %": round(s.mean(), 2),
+                            "Medyan %":   round(s.median(), 2),
+                            "Std %":      round(s.std(), 2),
+                            "Min %":      round(s.min(), 2),
+                            "Max %":      round(s.max(), 2),
+                            "Pozitif %":  round((s > 0).mean() * 100, 0),
+                        })
+                    st.dataframe(pd.DataFrame(summ), use_container_width=True, hide_index=True)
+
+                    st.warning(
+                        "**Uyarı:** 'En benzer' geçmiş dönem, geleceğin aynı olacağı "
+                        "anlamına gelmez. Std yüksek ve pozitif oran %50'ye yakınsa "
+                        "sinyal zayıftır; tekil eşleşmeye değil dağılıma bakın."
                     )
 
 else:
