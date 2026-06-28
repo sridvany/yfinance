@@ -1799,11 +1799,31 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
         else:
             c1, c2, c3 = st.columns(3)
             with c1:
-                pa_window = st.number_input("Pencere (gün)", min_value=10, max_value=400, value=60, step=5, key="pa_window")
+                pa_window = st.selectbox(
+                    "Pencere (gün)", options=[30, 60, 90, 120, 240, 360], index=1, key="pa_window",
+                    help="Formasyonun uzunluğu. Bugünün son kaç günlük hareketini bir kalıp "
+                         "sayıp geçmişte arayacağı. 60 ≈ son 3 ay. Küçük değer kısa vadeli "
+                         "kalıpları, büyük değer uzun trend formasyonlarını yakalar."
+                )
             with c2:
-                pa_topk = st.number_input("Top-K eşleşme", min_value=3, max_value=30, value=10, step=1, key="pa_topk")
+                pa_topk = st.number_input(
+                    "Top-K eşleşme", min_value=3, max_value=30, value=5, step=1, key="pa_topk",
+                    help="Kaç benzer dönem listelensin. En benzeyen ilk K dönem gösterilir. "
+                         "10 dengeli: dağılım için yeterli örnek var, hepsi de gerçekten benzer "
+                         "kalır. Çok büyütmek alttaki zayıf eşleşmeleri katar."
+                )
             with c3:
-                pa_h2 = st.number_input("Uzun ufuk (gün)", min_value=5, max_value=250, value=60, step=5, key="pa_h2")
+                pa_h2 = st.number_input(
+                    "Uzun ufuk (gün)", min_value=5, max_value=250, value=60, step=5, key="pa_h2",
+                    help="Eşleşmeden sonra kaç gün ileriye bakılsın. Benzer dönem bulunduktan "
+                         "sonra 'sonraki X günde ne oldu' getirisi hesaplanır. 20g (sabit) anlık "
+                         "tepki, bu değer (örn. 60g) formasyonun tamamlanmasıdır."
+                )
+            st.caption(
+                "**Pencere** = formasyonun uzunluğu · **Top-K** = kaç benzer dönem · "
+                "**Uzun ufuk** = eşleşme sonrası kaç gün ileriye bakılacağı "
+                "(kısa ufuk 20 gün sabittir). Kutuların yanındaki **?** işaretinde detay var."
+            )
             pa_h1 = 20
             horizons = sorted({pa_h1, int(pa_h2)})
 
