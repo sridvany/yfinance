@@ -8,3 +8,4 @@ plotly
 statsmodels
 openpyxl
 dtaidistance 
+beautifulsoup4
