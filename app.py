@@ -65,7 +65,6 @@ IG_MARKET_MAP = {
     "ETH-USD": "forex/markets-forex/ether",
 }
 
-@st.cache_data(ttl=60, show_spinner=False)
 def fetch_ig_snapshot(rel_path, region="en"):
     """IG market sayfasından anlık BUY/SELL/değişim/High/Low/sentiment çeker.
     Dönüş: dict(name, code, sell, buy, change, change_pct, high, low,
@@ -93,8 +92,17 @@ def fetch_ig_snapshot(rel_path, region="en"):
     text = soup.get_text(" ", strip=True)
 
     def _num(s):
+        if s is None:
+            return None
+        s = s.strip()
+        # Hem nokta hem virgül varsa: virgül binlik ayraç -> sil
+        if "," in s and "." in s:
+            s = s.replace(",", "")
+        # Sadece virgül varsa: ondalık ayraç -> noktaya çevir
+        elif "," in s:
+            s = s.replace(",", ".")
         try:
-            return float(s.replace(",", ""))
+            return float(s)
         except Exception:
             return None
 
@@ -108,11 +116,20 @@ def fetch_ig_snapshot(rel_path, region="en"):
     m = re.search(r"BUY\s*([\d,]+\.?\d*)", text)
     if m: out["buy"] = _num(m.group(1))
 
-    # Değişim: "66.19(1.55%)" veya "-14.0(-0.34%)"
-    m = re.search(r"(-?[\d,]+\.?\d*)\s*\((-?[\d.]+)%\)", text)
+    # Değişim — birincil: "-9.2(-0.22%)" / "-9,2 (-0,22%)" / "66.19(1.55%)"
+    m = re.search(r"(-?[\d.,]+)\s*\(\s*(-?[\d.,]+)\s*%\s*\)", text)
     if m:
         out["change"] = _num(m.group(1))
         out["change_pct"] = _num(m.group(2))
+    else:
+        # Yedek: değişim ve yüzde ayrı; High'tan hemen önceki sayı + (..%)
+        m_pct = re.search(r"\(\s*(-?[\d.,]+)\s*%\s*\)", text)
+        if m_pct:
+            out["change_pct"] = _num(m_pct.group(1))
+        # change'i BUY fiyatı ile High arasındaki ilk işaretli sayı say
+        seg = re.search(r"BUY\s*[\d.,]+\s*(-?[\d.,]+)", text)
+        if seg:
+            out["change"] = _num(seg.group(1))
 
     m = re.search(r"High:\s*([\d,]+\.?\d*)", text)
     if m: out["high"] = _num(m.group(1))
