@@ -1809,6 +1809,23 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
 
             run_pa = st.button("Örüntü Analizini Çalıştır", key="pa_run")
 
+            def _z(a):
+                s = a.std()
+                return np.zeros_like(a) if s == 0 else (a - a.mean()) / s
+
+            def _shape_desc(z):
+                """z-score pencereyi sözel forma çevir: eğim + dip/tepe konumu."""
+                w = len(z)
+                third = w // 3
+                slope = z[-1] - z[0]
+                trend = ("yükseliş" if slope > 0.5 else
+                         "düşüş" if slope < -0.5 else "yatay")
+                imin, imax = int(np.argmin(z)), int(np.argmax(z))
+                def _loc(i):
+                    return ("başında" if i < third else
+                            "ortasında" if i < 2 * third else "sonunda")
+                return trend, f"dip pencerenin {_loc(imin)}, tepe {_loc(imax)}"
+
             if run_pa:
                 prices = df["Close"].dropna()
                 values = prices.values.astype(np.float64)
@@ -1821,11 +1838,8 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
 
                 if n < window + max_h + 5:
                     st.warning(f"Yetersiz veri: {n} gün. En az {window + max_h + 5} gerekli.")
+                    st.session_state.pop("pa_result", None)
                 else:
-                    def _z(a):
-                        s = a.std()
-                        return np.zeros_like(a) if s == 0 else (a - a.mean()) / s
-
                     query = _z(values[-window:])
                     last_start = n - window - max_h
 
@@ -1843,62 +1857,148 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                             if len(selected) == top_k:
                                 break
 
-                    rows = []
-                    for d, start in selected:
+                    # DTW -> benzerlik %: en kötü adaya göre normalize, 0..100
+                    worst = cands[-1][0] if cands else 1.0
+                    worst = worst if worst > 0 else 1.0
+
+                    matches = []
+                    for rank, (d, start) in enumerate(selected, 1):
                         end = start + window
                         end_price = values[end - 1]
-                        row = {
-                            "Başlangıç": dates[start].date(),
-                            "Bitiş":     dates[end - 1].date(),
-                            "DTW":       round(float(d), 3),
-                        }
-                        for h in horizons:
-                            row[f"+{h}g %"] = round((values[end - 1 + h] / end_price - 1) * 100, 2)
-                        rows.append(row)
-                    table = pd.DataFrame(rows)
-
-                    st.subheader("Overlay — bugün vs en benzer dönemler")
-                    fig_ov = go.Figure()
-                    x = list(range(window))
-                    for d, start in selected:
-                        fig_ov.add_trace(go.Scatter(
-                            x=x, y=_z(values[start:start + window]),
-                            mode="lines", line=dict(color="rgba(150,150,150,0.4)", width=1),
-                            showlegend=False, hoverinfo="skip"
-                        ))
-                    fig_ov.add_trace(go.Scatter(
-                        x=x, y=query, mode="lines",
-                        line=dict(color="#dc2626", width=3), name="Bugün"
-                    ))
-                    fig_ov.update_layout(
-                        xaxis_title="Pencere içi gün", yaxis_title="z-score fiyat",
-                        height=420, margin=dict(l=50, r=20, t=20, b=40), hovermode="x unified"
-                    )
-                    st.plotly_chart(fig_ov, use_container_width=True)
-
-                    st.subheader("En benzer dönemler")
-                    st.dataframe(table, use_container_width=True, hide_index=True)
-
-                    st.subheader("Forward getiri dağılımı")
-                    summ = []
-                    for h in horizons:
-                        s = table[f"+{h}g %"]
-                        summ.append({
-                            "Ufuk":       f"+{h}g",
-                            "Ortalama %": round(s.mean(), 2),
-                            "Medyan %":   round(s.median(), 2),
-                            "Std %":      round(s.std(), 2),
-                            "Min %":      round(s.min(), 2),
-                            "Max %":      round(s.max(), 2),
-                            "Pozitif %":  round((s > 0).mean() * 100, 0),
+                        fwd = {h: round((values[end - 1 + h] / end_price - 1) * 100, 2)
+                               for h in horizons}
+                        matches.append({
+                            "rank": rank,
+                            "start": int(start),
+                            "dtw": float(d),
+                            "sim": round((1 - d / worst) * 100, 1),
+                            "start_date": str(dates[start].date()),
+                            "end_date": str(dates[end - 1].date()),
+                            "fwd": fwd,
                         })
-                    st.dataframe(pd.DataFrame(summ), use_container_width=True, hide_index=True)
 
-                    st.warning(
-                        "**Uyarı:** 'En benzer' geçmiş dönem, geleceğin aynı olacağı "
-                        "anlamına gelmez. Std yüksek ve pozitif oran %50'ye yakınsa "
-                        "sinyal zayıftır; tekil eşleşmeye değil dağılıma bakın."
-                    )
+                    st.session_state["pa_result"] = {
+                        "values": values, "query": query, "window": window,
+                        "horizons": horizons, "matches": matches,
+                        "dates": [str(dt.date()) for dt in dates],
+                    }
+
+            # ── Sonuçları session_state'ten render et (buton sonrası da kalsın) ──
+            res = st.session_state.get("pa_result")
+            if res:
+                values  = res["values"]
+                query   = res["query"]
+                window  = res["window"]
+                horizons = res["horizons"]
+                matches = res["matches"]
+
+                # Tablo
+                rows = []
+                for m in matches:
+                    row = {
+                        "#":         m["rank"],
+                        "Benzerlik %": m["sim"],
+                        "Başlangıç": m["start_date"],
+                        "Bitiş":     m["end_date"],
+                        "DTW":       round(m["dtw"], 3),
+                    }
+                    for h in horizons:
+                        row[f"+{h}g %"] = m["fwd"][h]
+                    rows.append(row)
+                table = pd.DataFrame(rows)
+
+                st.subheader("Overlay — bugün vs en benzer dönemler")
+                fig_ov = go.Figure()
+                x = list(range(window))
+                for m in matches:
+                    s0 = m["start"]
+                    fig_ov.add_trace(go.Scatter(
+                        x=x, y=_z(values[s0:s0 + window]),
+                        mode="lines", line=dict(color="rgba(150,150,150,0.35)", width=1),
+                        showlegend=False, hovertemplate=f"#{m['rank']} ({m['start_date']})<extra></extra>"
+                    ))
+                fig_ov.add_trace(go.Scatter(
+                    x=x, y=query, mode="lines",
+                    line=dict(color="#dc2626", width=3), name="Bugün"
+                ))
+                fig_ov.update_layout(
+                    xaxis_title="Pencere içi gün", yaxis_title="z-score fiyat",
+                    height=420, margin=dict(l=50, r=20, t=20, b=40), hovermode="x unified"
+                )
+                st.plotly_chart(fig_ov, use_container_width=True)
+
+                st.subheader("En benzer dönemler")
+                st.dataframe(table, use_container_width=True, hide_index=True)
+
+                # ── Tek eşleşme detayı + neden benzer açıklaması ──
+                st.subheader("Eşleşme detayı")
+                labels = [f"#{m['rank']} — {m['start_date']} → {m['end_date']} "
+                          f"(%{m['sim']} benzer)" for m in matches]
+                sel_idx = st.selectbox(
+                    "İncelenecek dönem:", range(len(matches)),
+                    format_func=lambda i: labels[i], key="pa_match_sel"
+                )
+                m = matches[sel_idx]
+                s0 = m["start"]
+                z_match = _z(values[s0:s0 + window])
+
+                fig_d = go.Figure()
+                fig_d.add_trace(go.Scatter(
+                    x=x, y=query, mode="lines",
+                    line=dict(color="#dc2626", width=2.5), name="Bugün"
+                ))
+                fig_d.add_trace(go.Scatter(
+                    x=x, y=z_match, mode="lines",
+                    line=dict(color="#2563eb", width=2.5),
+                    name=f"#{m['rank']} ({m['start_date']})"
+                ))
+                fig_d.update_layout(
+                    xaxis_title="Pencere içi gün", yaxis_title="z-score fiyat",
+                    height=380, margin=dict(l=50, r=20, t=20, b=40), hovermode="x unified"
+                )
+                st.plotly_chart(fig_d, use_container_width=True)
+
+                # Neden benzer — sözel karşılaştırma
+                qt, qd = _shape_desc(query)
+                mt, md = _shape_desc(z_match)
+                corr = float(np.corrcoef(query, z_match)[0, 1])
+                fwd_txt = " · ".join(f"+{h}g: %{m['fwd'][h]}" for h in horizons)
+
+                if qt == mt:
+                    trend_line = f"İkisi de genel olarak **{qt}** eğiliminde."
+                else:
+                    trend_line = (f"Bugün **{qt}**, bu dönem **{mt}** eğiliminde "
+                                  "— eğilim farkı var, DTW şekli zaman kaydırarak hizalamış.")
+
+                st.markdown(
+                    f"**Neden benzer?**\n\n"
+                    f"- {trend_line}\n"
+                    f"- Bugünün formu: {qd}. Bu dönemin formu: {md}.\n"
+                    f"- Nokta-nokta korelasyon: **{corr:.2f}** "
+                    f"(DTW benzerlik skoru: **%{m['sim']}**).\n"
+                    f"- Bu dönemin sonrasındaki getiri → {fwd_txt}"
+                )
+
+                st.subheader("Forward getiri dağılımı")
+                summ = []
+                for h in horizons:
+                    s = table[f"+{h}g %"]
+                    summ.append({
+                        "Ufuk":       f"+{h}g",
+                        "Ortalama %": round(s.mean(), 2),
+                        "Medyan %":   round(s.median(), 2),
+                        "Std %":      round(s.std(), 2),
+                        "Min %":      round(s.min(), 2),
+                        "Max %":      round(s.max(), 2),
+                        "Pozitif %":  round((s > 0).mean() * 100, 0),
+                    })
+                st.dataframe(pd.DataFrame(summ), use_container_width=True, hide_index=True)
+
+                st.warning(
+                    "**Uyarı:** 'En benzer' geçmiş dönem, geleceğin aynı olacağı "
+                    "anlamına gelmez. Std yüksek ve pozitif oran %50'ye yakınsa "
+                    "sinyal zayıftır; tekil eşleşmeye değil dağılıma bakın."
+                )
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
