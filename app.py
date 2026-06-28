@@ -119,8 +119,10 @@ def fetch_ig_snapshot(rel_path, region="en"):
     m = re.search(r"Low:\s*([\d,]+\.?\d*)", text)
     if m: out["low"] = _num(m.group(1))
 
-    # Sentiment: "78% of client accounts are long on this market"
-    m = re.search(r"(\d+)%\s*of client accounts are\s*\*{0,2}(long|short)",
+    # Sentiment — birincil: "76% of client accounts are long on this market"
+    out["long_pct"] = None
+    out["short_pct"] = None
+    m = re.search(r"(\d+)\s*%\s*of\s+client\s+accounts\s+are\s+(long|short)",
                   text, re.IGNORECASE)
     if m:
         pct = int(m.group(1))
@@ -128,6 +130,12 @@ def fetch_ig_snapshot(rel_path, region="en"):
             out["long_pct"], out["short_pct"] = pct, 100 - pct
         else:
             out["short_pct"], out["long_pct"] = pct, 100 - pct
+    else:
+        # Yedek: "Long Short 76% 24%" bloğu (etiketlerden sonra iki yüzde)
+        m2 = re.search(r"Long\s+Short\s+(\d+)\s*%\s+(\d+)\s*%", text, re.IGNORECASE)
+        if m2:
+            out["long_pct"] = int(m2.group(1))
+            out["short_pct"] = int(m2.group(2))
 
     # Enstrüman adı: ilk H1
     h1 = soup.find("h1")
@@ -195,6 +203,27 @@ def load_ig_history(ticker):
         return df.sort_values("timestamp")
     except Exception:
         return None
+
+def delete_ig_row(ticker, timestamp_str):
+    """ticker + timestamp eşleşen satır(lar)ı Sheets'ten siler.
+    Dönüş: (ok, mesaj)."""
+    conn = _get_gsheets_conn()
+    if conn is None:
+        return False, "Google Sheets bağlantısı kurulu değil."
+    try:
+        df = conn.read(ttl=0).dropna(how="all")
+        if df.empty:
+            return False, "Silinecek kayıt yok."
+        before = len(df)
+        mask = ~((df["ticker"] == ticker) &
+                 (df["timestamp"].astype(str) == timestamp_str))
+        df2 = df[mask]
+        if len(df2) == before:
+            return False, "Eşleşen kayıt bulunamadı."
+        conn.update(data=df2)
+        return True, "Kayıt silindi."
+    except Exception as e:
+        return False, f"Silme hatası: {e}"
 
 
 # ============================================================
@@ -1806,6 +1835,20 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 st.dataframe(
                     show[IG_HISTORY_COLUMNS], use_container_width=True, hide_index=True
                 )
+
+                # ── Kayıt silme ──
+                with st.expander("🗑️ Kayıt sil"):
+                    ts_options = hist["timestamp"].astype(str).tolist()
+                    to_del = st.selectbox(
+                        "Silinecek kayıt (timestamp):", ts_options, key="ig_del_sel"
+                    )
+                    if st.button("Seçili kaydı sil", key="ig_del_btn", type="secondary"):
+                        ok, msg = delete_ig_row(symbol.strip().upper(), to_del)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
