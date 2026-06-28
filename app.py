@@ -70,19 +70,25 @@ def fetch_ig_snapshot(rel_path, region="en"):
     Dönüş: dict(name, code, sell, buy, change, change_pct, high, low,
                 long_pct, short_pct, url) veya hata için dict(error=...)."""
     import re
+    import time
     import requests
     from bs4 import BeautifulSoup
 
-    url = f"https://www.ig.com/{region}/{rel_path}"
+    base_url = f"https://www.ig.com/{region}/{rel_path}"
+    # Cache-bypass: CDN/proxy'nin eski kopya vermesini engelle
+    bust_url = f"{base_url}?_={int(time.time())}"
+    url = base_url  # gösterim/kayıt için temiz URL
     headers = {
         "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                        "AppleWebKit/537.36 (KHTML, like Gecko) "
                        "Chrome/124.0 Safari/537.36"),
         "Accept-Language": "en-US,en;q=0.9",
         "Accept": "text/html,application/xhtml+xml",
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        "Pragma": "no-cache",
     }
     try:
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(bust_url, headers=headers, timeout=20)
         if r.status_code != 200:
             return {"error": f"HTTP {r.status_code} — IG sayfası alınamadı.", "url": url}
     except Exception as e:
