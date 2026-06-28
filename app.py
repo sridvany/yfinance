@@ -60,6 +60,7 @@ def fetch_ig_snapshot(rel_path, region="en"):
     """IG market sayfasından anlık BUY/SELL/değişim/High/Low/sentiment çeker.
     Dönüş: dict(name, code, sell, buy, change, change_pct, high, low,
                 long_pct, short_pct, url) veya hata için dict(error=...)."""
+    import re
     import requests
     from bs4 import BeautifulSoup
 
