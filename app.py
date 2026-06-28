@@ -1942,6 +1942,17 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 s0 = m["start"]
                 z_match = _z(values[s0:s0 + window])
 
+                # Eşleşen dönemin SONRASI (~3 ay = 63 işgünü), pencere
+                # istatistiğiyle aynı z-score uzayında devam ettir.
+                FWD_DAYS = 63
+                win_slice = values[s0:s0 + window]
+                w_mean, w_std = win_slice.mean(), win_slice.std()
+                w_std = w_std if w_std != 0 else 1.0
+                post_end = min(s0 + window + FWD_DAYS, len(values))
+                post_raw = values[s0 + window:post_end]
+                z_post = (post_raw - w_mean) / w_std
+                x_post = list(range(window, window + len(z_post)))
+
                 fig_d = go.Figure()
                 fig_d.add_trace(go.Scatter(
                     x=x, y=query, mode="lines",
@@ -1952,8 +1963,18 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     line=dict(color="#2563eb", width=2.5),
                     name=f"#{m['rank']} ({m['start_date']})"
                 ))
+                if len(z_post):
+                    # pencere sonu ile sonrasını görsel olarak bağla
+                    fig_d.add_trace(go.Scatter(
+                        x=[window - 1] + x_post, y=[z_match[-1]] + list(z_post),
+                        mode="lines", line=dict(color="#93c5fd", width=2.5, dash="dot"),
+                        name="↳ sonraki ~3 ay"
+                    ))
+                # pencere sonunu işaretle
+                fig_d.add_vline(x=window - 1, line=dict(color="gray", width=1, dash="dash"))
                 fig_d.update_layout(
-                    xaxis_title="Pencere içi gün", yaxis_title="z-score fiyat",
+                    xaxis_title="Pencere içi gün (kesikli çizgi = formasyon sonu)",
+                    yaxis_title="z-score fiyat",
                     height=380, margin=dict(l=50, r=20, t=20, b=40), hovermode="x unified"
                 )
                 st.plotly_chart(fig_d, use_container_width=True)
