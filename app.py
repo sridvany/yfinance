@@ -149,9 +149,20 @@ def fetch_ig_snapshot(rel_path, region="en"):
 # ============================================================
 
 IG_HISTORY_COLUMNS = [
-    "timestamp", "ticker", "ig_name", "sell", "buy", "change",
-    "change_pct", "high", "low", "long_pct", "short_pct",
+    "timestamp", "ticker", "ig_name", "sell", "buy",
+    "long_pct", "short_pct", "change", "change_pct", "direction",
+    "high", "low",
 ]
+
+def _direction_from_change(chg):
+    """IG günlük değişimine göre yön etiketi."""
+    if chg is None:
+        return ""
+    if chg > 0:
+        return "up"
+    if chg < 0:
+        return "down"
+    return "flat"
 
 def _get_gsheets_conn():
     """st.connection ile gsheets bağlantısı döndürür; yoksa None."""
@@ -182,8 +193,14 @@ def save_ig_snapshot(snap, ticker):
             "change": snap.get("change"), "change_pct": snap.get("change_pct"),
             "high": snap.get("high"), "low": snap.get("low"),
             "long_pct": snap.get("long_pct"), "short_pct": snap.get("short_pct"),
+            "direction": _direction_from_change(snap.get("change")),
         }
         new_df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        # Kolonları sabit sıraya diz (eksikler boş eklenir)
+        for c in IG_HISTORY_COLUMNS:
+            if c not in new_df.columns:
+                new_df[c] = None
+        new_df = new_df[IG_HISTORY_COLUMNS]
         conn.update(data=new_df)
         return True, "Kayıt eklendi."
     except Exception as e:
@@ -1720,15 +1737,19 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                     c1.metric("SELL", snap["sell"] if snap["sell"] is not None else "—")
                     c2.metric("BUY",  snap["buy"]  if snap["buy"]  is not None else "—")
 
-                    # Değişim — yeşil/kırmızı
+                    # Değişim — yeşil/kırmızı + belirgin yön etiketi
                     chg, pct = snap.get("change"), snap.get("change_pct")
                     if chg is not None:
-                        color = "#16a34a" if chg >= 0 else "#dc2626"
-                        sign  = "▲" if chg >= 0 else "▼"
+                        if chg > 0:
+                            color, sign, label = "#16a34a", "▲", "📈 YÜKSELİŞTE"
+                        elif chg < 0:
+                            color, sign, label = "#dc2626", "▼", "📉 DÜŞÜŞTE"
+                        else:
+                            color, sign, label = "#6b7280", "■", "➖ DEĞİŞİM YOK"
                         pct_s = f" ({pct:+.2f}%)" if pct is not None else ""
                         st.markdown(
                             f"<div style='font-size:1.3em;font-weight:700;color:{color}'>"
-                            f"{sign} {chg:+.2f}{pct_s}</div>",
+                            f"{sign} {chg:+.2f}{pct_s} &nbsp;·&nbsp; {label}</div>",
                             unsafe_allow_html=True,
                         )
 
@@ -1832,23 +1853,39 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                 st.markdown("**Tüm kayıtlar**")
                 show = hist.copy()
                 show["timestamp"] = show["timestamp"].dt.strftime("%Y-%m-%d %H:%M")
+                if "direction" in show.columns:
+                    _dmap = {"up": "📈 yükseliş", "down": "📉 düşüş", "flat": "➖ sabit"}
+                    show["direction"] = show["direction"].map(
+                        lambda v: _dmap.get(str(v), "")
+                    )
+                cols = [c for c in IG_HISTORY_COLUMNS if c in show.columns]
                 st.dataframe(
-                    show[IG_HISTORY_COLUMNS], use_container_width=True, hide_index=True
+                    show[cols], use_container_width=True, hide_index=True
                 )
 
-                # ── Kayıt silme ──
+                # ── Kayıt silme (PIN korumalı) ──
                 with st.expander("🗑️ Kayıt sil"):
                     ts_options = hist["timestamp"].astype(str).tolist()
                     to_del = st.selectbox(
                         "Silinecek kayıt (timestamp):", ts_options, key="ig_del_sel"
                     )
+                    pin_in = st.text_input(
+                        "Silme PIN'i", type="password", key="ig_del_pin",
+                        help="Silme işlemi için yetki gerekir."
+                    )
                     if st.button("Seçili kaydı sil", key="ig_del_btn", type="secondary"):
-                        ok, msg = delete_ig_row(symbol.strip().upper(), to_del)
-                        if ok:
-                            st.success(msg)
-                            st.rerun()
+                        real_pin = st.secrets.get("ig_delete_pin")
+                        if not real_pin:
+                            st.error("Silme PIN'i tanımlı değil (secrets: ig_delete_pin).")
+                        elif pin_in != real_pin:
+                            st.error("PIN hatalı. Silme yetkin yok.")
                         else:
-                            st.error(msg)
+                            ok, msg = delete_ig_row(symbol.strip().upper(), to_del)
+                            if ok:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
 
 else:
     st.warning("Filtreleme sonrası veri kalmadı.")
