@@ -975,73 +975,173 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
 
                 st.plotly_chart(fig_stl, use_container_width=True, config={"scrollZoom": True})
 
-                # ── MEVSİMSELLİK YORUMU ───────────────────────────
-                with st.expander("🌊 Mevsimsellik Analizi", expanded=False):
-                    seasonal_s = pd.Series(stl_res.seasonal, index=close_clean.index)
-                    amp        = seasonal_s.max() - seasonal_s.min()
-                    amp_pct    = (np.exp(seasonal_s.abs().mean()) - 1) * 100
-                    s_max_date = seasonal_s.idxmax()
-                    s_min_date = seasonal_s.idxmin()
-                    roll_std   = seasonal_s.rolling(window=stl_period).std()
-
-                    st.markdown("**📋 Genel Özet**")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Salınım Genişliği (log)", f"{amp:.4f}")
-                    c2.metric("Ort. Fiyat Etkisi (yaklaşık)", f"%{amp_pct:.1f}")
-                    c3.metric("Periyot", f"{stl_period} bar")
-
-                    st.markdown(f"""
-- **En güçlü pozitif mevsimsel etki:** {s_max_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.max():.4f}`
-- **En güçlü negatif mevsimsel etki:** {s_min_date.strftime("%Y-%m-%d")} → log değer: `{seasonal_s.min():.4f}`
-- **Ortalama mutlak mevsimsel etki:** `{seasonal_s.abs().mean():.4f}` (log birim)
-- **Yorum:** Ortalama mevsimsel fiyat etkisi yaklaşık **%{amp_pct:.1f}**. {"Bu yüksek bir oran — döngüsel alım/satım stratejileri için kullanılabilir." if amp_pct > 5 else "Bu düşük bir oran — mevsimsellik bu varlık için belirleyici değil."}
-                    """)
-
-                    st.markdown("**📊 Periyot Dilimine Göre Ortalama Mevsimsel Etki**")
-                    if interval in ("1d", "1wk"):
-                        group_label = "Ay"
-                        group_key   = seasonal_s.index.month
-                        tick_labels = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
-                    elif interval in ("1h", "30m", "15m", "5m", "2m", "1m"):
-                        group_label = "Haftanın Günü"
-                        group_key   = seasonal_s.index.dayofweek
-                        tick_labels = ["Pzt","Sal","Çar","Per","Cum"]
+                # ── TAKVİM MEVSİMSELLİĞİ (YIL ÜSTÜ BİNDİRME) ──────
+                with st.expander("📅 Takvim Mevsimselliği — Yıl Üstü Bindirme", expanded=False):
+                    if interval not in ("1d", "1wk"):
+                        st.info("Takvim mevsimselliği yalnızca günlük (1d) ve haftalık (1wk) veride anlamlıdır. Yukarıdan aralığı değiştirin.")
                     else:
-                        group_label = "Çeyrek"
-                        group_key   = seasonal_s.index.quarter
-                        tick_labels = ["Q1","Q2","Q3","Q4"]
+                        _px = close_clean.copy()
+                        _px.index = pd.to_datetime(_px.index)
+                        if getattr(_px.index, "tz", None) is not None:
+                            _px.index = _px.index.tz_localize(None)
 
-                    group_mean  = seasonal_s.groupby(group_key).mean()
-                    bar_colors  = ["#15803d" if v >= 0 else "#dc2626" for v in group_mean.values]
-                    fig_seas_bar = go.Figure(go.Bar(
-                        x=list(range(len(group_mean))), y=group_mean.values,
-                        marker_color=bar_colors,
-                        text=[f"{v:.4f}" for v in group_mean.values],
-                        textposition="outside",
-                    ))
-                    fig_seas_bar.add_hline(y=0, line_color="black", line_width=0.8)
-                    fig_seas_bar.update_layout(
-                        height=300,
-                        xaxis=dict(tickvals=list(range(len(group_mean))), ticktext=tick_labels[:len(group_mean)], title=group_label),
-                        yaxis=dict(title="Ort. Mevsimsel Etki (log)"),
-                        margin=dict(l=40, r=20, t=20, b=40),
-                        plot_bgcolor="white",
-                    )
-                    st.plotly_chart(fig_seas_bar, use_container_width=True)
+                        all_years = sorted(int(y) for y in _px.index.year.unique())
+                        cur_year  = all_years[-1]
+                        hist_all  = [y for y in all_years if y < cur_year]
 
-                    st.markdown("**📈 Mevsimsel Gücün Zaman İçindeki Değişimi** *(rolling std)*")
-                    fig_roll = go.Figure(go.Scatter(
-                        x=roll_std.index, y=roll_std.values,
-                        mode="lines", line=dict(color="#c2410c", width=1.2),
-                    ))
-                    fig_roll.update_layout(
-                        height=220, margin=dict(l=40, r=20, t=10, b=30),
-                        yaxis_title="Std (log)", plot_bgcolor="white", hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_roll, use_container_width=True)
-                    _rd = roll_std.dropna()
-                    trend_dir = "güçleniyor 📈" if _rd.iloc[-1] > _rd.iloc[len(_rd)//2] else "zayıflıyor 📉"
-                    st.caption(f"Mevsimsel etki son dönemde **{trend_dir}**.")
+                        if len(hist_all) < 3:
+                            st.warning(f"Yeterli tam yıl yok (mevcut: {len(hist_all)}). En az 3 kapanmış yıl gerekiyor.")
+                        else:
+                            cc1, cc2, cc3 = st.columns([1.2, 1, 1])
+                            with cc1:
+                                win_opt = st.selectbox(
+                                    "Geçmiş pencere",
+                                    ["Tümü", "5 yıl", "10 yıl", "15 yıl", "20 yıl"],
+                                    index=0, key="seas_win",
+                                    help="Kalıbın hâlâ yaşayıp yaşamadığını görmek için pencereyi değiştirip karşılaştırın.",
+                                )
+                            with cc2:
+                                detrend = st.checkbox(
+                                    "Drift'i çıkar", value=True, key="seas_detrend",
+                                    help="Örneklemin ortalama günlük eğilimini her yıldan çıkarır. Uzun vadeli yükseliş trendi mevsimsellik gibi görünmesin diye.",
+                                )
+                            with cc3:
+                                smooth_w = st.slider("Yumuşatma (gün)", 1, 21, 5, step=2, key="seas_smooth")
+
+                            n_map     = {"5 yıl": 5, "10 yıl": 10, "15 yıl": 15, "20 yıl": 20}
+                            hist_years = hist_all[-n_map[win_opt]:] if win_opt in n_map else hist_all
+
+                            # 29 Şubat hizalaması: artık olmayan yıllarda 1 Mart ve sonrasını +1 kaydır
+                            def _doy_aligned(idx):
+                                doy     = idx.dayofyear.values.astype(int)
+                                is_leap = np.asarray(idx.is_leap_year)
+                                return doy + ((~is_leap) & (doy >= 60)).astype(int)
+
+                            logret   = np.log(_px).diff().dropna()
+                            grid     = np.arange(1, 367)
+                            min_bars = 60 if interval == "1d" else 12
+
+                            _lr = logret[logret.index.year.isin(hist_years)]
+                            if len(_lr) < min_bars:
+                                st.warning("Seçilen pencerede yeterli gözlem yok.")
+                            else:
+                                span_days = max((_lr.index[-1] - _lr.index[0]).days, 1)
+                                mu_cal    = float(_lr.sum()) / span_days if detrend else 0.0
+
+                                curves = {}
+                                for y in hist_years + [cur_year]:
+                                    seg = logret[logret.index.year == y]
+                                    if len(seg) < min_bars:
+                                        continue
+                                    s = pd.Series(seg.cumsum().values, index=_doy_aligned(seg.index))
+                                    s = s[~s.index.duplicated(keep="last")].reindex(grid).ffill()
+                                    curves[y] = s - mu_cal * (grid - 1)
+
+                                used_years = [y for y in hist_years if y in curves]
+                                if len(used_years) < 3:
+                                    st.warning("Yeterli tam yıl eğrisi oluşturulamadı.")
+                                else:
+                                    hist_mat = pd.DataFrame({y: curves[y] for y in used_years})
+                                    med = hist_mat.median(axis=1)
+                                    q25 = hist_mat.quantile(0.25, axis=1)
+                                    q75 = hist_mat.quantile(0.75, axis=1)
+                                    if smooth_w > 1:
+                                        _r  = lambda s: s.rolling(smooth_w, center=True, min_periods=1).mean()
+                                        med, q25, q75 = _r(med), _r(q25), _r(q75)
+
+                                    to_pct   = lambda s: (np.exp(s) - 1) * 100
+                                    x_dates  = pd.to_datetime("2019-12-31") + pd.to_timedelta(grid, unit="D")
+                                    cur_curve = curves.get(cur_year)
+                                    last_doy  = int(_doy_aligned(_px.index[[-1]])[0])
+
+                                    fig_ov = go.Figure()
+                                    fig_ov.add_trace(go.Scatter(
+                                        x=x_dates, y=to_pct(q75), mode="lines",
+                                        line=dict(width=0), hoverinfo="skip", showlegend=False,
+                                    ))
+                                    fig_ov.add_trace(go.Scatter(
+                                        x=x_dates, y=to_pct(q25), mode="lines",
+                                        line=dict(width=0), fill="tonexty",
+                                        fillcolor="rgba(15,157,143,0.15)",
+                                        name="Yıllar arası %25–75 aralığı", hoverinfo="skip",
+                                    ))
+                                    fig_ov.add_trace(go.Scatter(
+                                        x=x_dates, y=to_pct(med), mode="lines",
+                                        line=dict(color="#0f9d8f", width=2),
+                                        name=f"{len(used_years)} yıl medyanı",
+                                        hovertemplate="%{x|%d %b}: %{y:.2f}%<extra></extra>",
+                                    ))
+                                    if cur_curve is not None:
+                                        _cc = cur_curve.copy()
+                                        _cc[grid > last_doy] = np.nan
+                                        fig_ov.add_trace(go.Scatter(
+                                            x=x_dates, y=to_pct(_cc), mode="lines",
+                                            line=dict(color="#dc2626", width=1.6),
+                                            name=f"{cur_year} (cari yıl)",
+                                            hovertemplate="%{x|%d %b}: %{y:.2f}%<extra></extra>",
+                                        ))
+
+                                    _pk, _tr = int(med.idxmax()), int(med.idxmin())
+                                    for _d, _lbl, _clr in ((_pk, "Medyan zirve", "#15803d"), (_tr, "Medyan dip", "#dc2626")):
+                                        fig_ov.add_trace(go.Scatter(
+                                            x=[x_dates[_d - 1]], y=[to_pct(med)[_d]],
+                                            mode="markers", marker=dict(size=11, color=_clr, symbol="circle"),
+                                            name=_lbl, hovertemplate=f"{_lbl}: %{{x|%d %b}}<extra></extra>",
+                                        ))
+                                    fig_ov.add_vline(x=x_dates[last_doy - 1], line_dash="dot", line_color="#6b7280", line_width=1.2)
+                                    fig_ov.add_hline(y=0, line_color="#9ca3af", line_width=0.8)
+                                    fig_ov.update_layout(
+                                        height=420,
+                                        margin=dict(l=50, r=20, t=30, b=40),
+                                        hovermode="x unified",
+                                        plot_bgcolor="white",
+                                        yaxis=dict(title="Yıl başına göre birikimli getiri (%)", gridcolor="#e5e7eb"),
+                                        xaxis=dict(tickformat="%b", dtick="M1", showgrid=True, gridcolor="#f3f4f6", title=None),
+                                        legend=dict(orientation="h", y=1.12, x=0),
+                                    )
+                                    st.plotly_chart(fig_ov, use_container_width=True)
+                                    st.caption(
+                                        f"Pencere: **{used_years[0]}–{used_years[-1]}** ({len(used_years)} yıl) · "
+                                        f"Drift {'çıkarıldı' if detrend else 'bırakıldı'} · Noktalı dikey çizgi bugünün takvim günü."
+                                    )
+
+                                    m_names = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
+                                    mdf = _lr.groupby([_lr.index.year, _lr.index.month]).sum().unstack()
+                                    mdf = mdf.reindex(columns=range(1, 13))
+                                    n_obs   = mdf.notna().sum()
+                                    hit     = (mdf > 0).sum() / n_obs.replace(0, np.nan) * 100
+                                    med_m   = (np.exp(mdf.median()) - 1) * 100
+
+                                    st.markdown("**🎯 Ay Bazlı Medyan Getiri ve Tutma Oranı (hit rate)**")
+                                    tbl = pd.DataFrame({
+                                        "Ay":               [m_names[m - 1] for m in range(1, 13)],
+                                        "Medyan getiri %":  med_m.values.round(2),
+                                        "Pozitif yıl oranı %": hit.values.round(0),
+                                        "Yıl sayısı":       n_obs.values,
+                                        "Sinyal":           ["🟢 güçlü" if h >= 70 else ("🔴 güçlü" if h <= 30 else "— zayıf") for h in hit.fillna(50).values],
+                                    })
+                                    st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+                                    _cm  = int(_px.index[-1].month)
+                                    _h   = hit.get(_cm, np.nan)
+                                    _md  = med_m.get(_cm, np.nan)
+                                    _n   = int(n_obs.get(_cm, 0))
+                                    if pd.notna(_h):
+                                        _pos = int(round(_h * _n / 100))
+                                        _judge = ("kayda değer bir eğilim" if (_h >= 70 or _h <= 30)
+                                                  else "yazı-turadan ayırt edilemeyecek bir dağılım")
+                                        st.info(
+                                            f"**İçinde bulunulan ay — {m_names[_cm - 1]}:** medyan getiri **%{_md:.2f}**, "
+                                            f"{_n} yılın **{_pos}**'inde pozitif (%{_h:.0f}). Bu {_judge}."
+                                        )
+
+                                    st.caption(
+                                        "⚠️ Medyan eğri tek bir uç yıl tarafından ele geçirilmez ama yön birliğini de göstermez — "
+                                        "kararı **pozitif yıl oranına** bakarak verin: %50 civarı bir ay, medyanı ne olursa olsun bilgi taşımaz. "
+                                        "12 ay × birden fazla pencere denenince rastgele veride bile birkaç ay 'güçlü' çıkar; "
+                                        "aşağıdaki Kruskal-Wallis testi bu yüzden duruyor. Mevsimsel kalıplar zamanla kaybolur veya tersine döner — "
+                                        "aynı ayı 5 / 10 / 20 yıl pencerelerinde kontrol edin."
+                                    )
 
                 # ── ARTIK YORUMU ──────────────────────────────────
                 with st.expander("⚡ Artık (Residual) Analizi", expanded=False):
@@ -1947,4 +2047,4 @@ Mantıksal **OR** ile birleştirildiği için aynı satır birden fazla koşulu 
                                 st.error(msg)
 
 else:
-    st.warning("Filtreleme sonrası veri kalmadı.") 
+    st.warning("Filtreleme sonrası veri kalmadı.")
